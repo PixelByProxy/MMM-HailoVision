@@ -12,10 +12,11 @@ from gi.repository import Gst
 
 # Local application-specific imports
 import hailo
+from hailo_apps.python.core.common.discord_handler import DiscordHandler
 from hailo_apps.python.core.common.hailo_logger import get_logger
+from hailo_apps.python.core.common.telegram_handler import TelegramHandler
 from hailo_apps.python.core.gstreamer.gstreamer_app import app_callback_class
 from hailo_apps.python.pipeline_apps.face_recognition.face_recognition_pipeline import GStreamerFaceRecognitionApp
-from hailo_apps.python.core.common.telegram_handler import TelegramHandler
 
 hailo_logger = get_logger(__name__)
 # endregion imports
@@ -24,6 +25,9 @@ hailo_logger = get_logger(__name__)
 TELEGRAM_ENABLED = False
 TELEGRAM_TOKEN = ''
 TELEGRAM_CHAT_ID = ''
+DISCORD_ENABLED = False
+DISCORD_TOKEN = ''
+DISCORD_CHANNEL_ID = ''
 # endregion
 
 
@@ -38,21 +42,38 @@ class user_callbacks_class(app_callback_class):
         self.telegram_token = TELEGRAM_TOKEN
         self.telegram_chat_id = TELEGRAM_CHAT_ID
 
+        # Discord settings as instance attributes
+        self.discord_enabled = DISCORD_ENABLED
+        self.discord_token = DISCORD_TOKEN
+        self.discord_channel_id = DISCORD_CHANNEL_ID
+
         # Initialize TelegramHandler if Telegram is enabled
         self.telegram_handler = None
         if self.telegram_enabled and self.telegram_token and self.telegram_chat_id:
             self.telegram_handler = TelegramHandler(self.telegram_token, self.telegram_chat_id)
 
+        # Initialize DiscordHandler if Discord is enabled
+        self.discord_handler = None
+        if self.discord_enabled and self.discord_token and self.discord_channel_id:
+            self.discord_handler = DiscordHandler(self.discord_token, self.discord_channel_id)
+
     def send_notification(self, name, global_id, confidence, frame):
         """
-        Check if Telegram is enabled and send a notification via the TelegramHandler.
+        Check if notification handlers are enabled and send notifications.
         """
-        if not self.telegram_enabled or not self.telegram_handler:
-            return
-
-        # Check if the notification should be sent
-        if self.telegram_handler.should_send_notification(global_id):
+        if (
+            self.telegram_enabled
+            and self.telegram_handler
+            and self.telegram_handler.should_send_notification(global_id)
+        ):
             self.telegram_handler.send_notification(name, global_id, confidence, frame)
+
+        if (
+            self.discord_enabled
+            and self.discord_handler
+            and self.discord_handler.should_send_notification(global_id)
+        ):
+            self.discord_handler.send_notification(name, global_id, confidence, frame)
     # endregion
 
 

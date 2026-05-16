@@ -31,7 +31,7 @@ The system provides an optional web interface, powered by the well-known FiftyOn
 
 In addition, the db_handler.py module provides a custom API for interactions with the LanceDB database for fine-grained DB management.
 
-For demonstration purposes, the current application demonstrates sending Telegram notifications via a bot when a person (either recognized or unknown) is detected. To enable this feature, the Telebot package is required but not installed by default, so you need to install it separately. Please note that a bot token and chat ID must be provided. In their absence, the function will simply do nothing. Please refer to Telegram guides on how to set up a bot.
+For demonstration purposes, the current application demonstrates sending Telegram or Discord notifications via a bot when a person (either recognized or unknown) is detected. To enable Telegram, the Telebot package is required but not installed by default, so you need to install it separately. Discord notifications use the Discord Bot API and require a bot token and channel ID. In their absence, the function will simply do nothing. Please refer to Telegram or Discord guides on how to set up a bot.
 
 For each face detection, there is a confidence level, followed by another confidence level for the recognition itself - in case the face was recognized as someone from the database.
 
@@ -99,8 +99,15 @@ Please refer to the https://voxel51.com/fiftyone/ guide for more details about u
 
 ## Telegram Notifications
 
-- Configure the `TELEGRAM_TOKEN` and `TELEGRAM_CHAT_ID` in `app_db.py` to enable Telegram notifications.
+- Configure the `TELEGRAM_ENABLED`, `TELEGRAM_TOKEN`, and `TELEGRAM_CHAT_ID` in `face_recognition.py` to enable Telegram notifications.
 - Notifications are sent when a face is detected, with an image and confidence score.
+
+---
+
+## Discord Notifications
+
+- Configure the `DISCORD_ENABLED`, `DISCORD_TOKEN`, and `DISCORD_CHANNEL_ID` in `face_recognition.py` to enable Discord notifications.
+- Notifications are sent when a face is detected, with a text message and confidence score.
 
 ---
 
@@ -109,6 +116,7 @@ Please refer to the https://voxel51.com/fiftyone/ guide for more details about u
 - [GStreamer](https://gstreamer.freedesktop.org/)
 - [LanceDB](https://lancedb.github.io/)
 - [Telegram Bot API](https://core.telegram.org/bots/api)
+- [Discord Developer Portal](https://discord.com/developers/docs/intro)
 - [Voxel51](https://voxel51.com/fiftyone/)
 
 ## Appendix: Brief Explanation of the Code Architecture and Design

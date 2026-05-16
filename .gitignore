@@ -59,3 +59,8 @@ resources
 .cursor/
 .vscode/
 docs/superpowers/
+
+# App Data
+hailo_apps/python/pipeline_apps/face_recognition/database/
+hailo_apps/python/pipeline_apps/face_recognition/samples/
+hailo_apps/python/pipeline_apps/face_recognition/train/

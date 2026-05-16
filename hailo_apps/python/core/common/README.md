@@ -507,6 +507,38 @@ if handler.should_send_notification(person_id):
     )
 ```
 
+### `discord_handler.py`
+**Purpose**: Discord bot integration for posting messages to a channel.
+
+**Key Features**:
+- Send plain text messages via the Discord Bot API
+- Rate limiting (1 notification per hour per person)
+- Configurable notification messages with confidence scores
+
+**Main Class**:
+- `DiscordHandler`: Manages Discord bot communication
+
+**Key Methods**:
+- `send_message(message)`: Post a plain text message to the configured channel
+- `send_notification(name, global_id, confidence, frame=None)`: Send a face-recognition style notification
+- `should_send_notification(global_id)`: Check if notification should be sent (rate limiting)
+
+**Usage Example**:
+```python
+from hailo_apps.python.core.common.discord_handler import DiscordHandler
+
+handler = DiscordHandler(token="YOUR_BOT_TOKEN", channel_id="YOUR_CHANNEL_ID")
+
+handler.send_message("Hello from Hailo Apps")
+
+if handler.should_send_notification(person_id):
+    handler.send_notification(
+        name="Alice",
+        global_id=person_id,
+        confidence=0.95,
+    )
+```
+
 ---
 
 ## Module Organization
@@ -579,4 +611,3 @@ When adding new utilities to this directory:
 ## Version History
 
 This directory contains stable, production-ready utilities. Breaking changes should be avoided, and deprecated functions should include migration guidance in their docstrings.
-
