@@ -55,6 +55,23 @@ apps:
       - "input_video_mode_train"
       - "pipeline_disable_sync"
 
+  magic_mirror:
+    name: "Magic Mirror Pipeline"
+    description: "Magic Mirror Pipeline (multi-model: scrfd + arcface)"
+    module: "hailo_apps.python.pipeline_apps.magic_mirror.magic_mirror"
+    script: "hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py"
+    cli: "hailo-magic-mirror"
+    # Multi-model app: test framework auto-detects and passes all HEF paths
+    default_test_suites:
+      - "basic_show_fps"
+      - "basic_input_video"
+      - "input_video_with_hef"
+    extra_test_suites:
+      - "basic_input_usb"
+      - "face_mode_train"
+      - "input_video_mode_train"
+      - "pipeline_disable_sync"
+
   instance_segmentation:
     name: "Instance Segmentation Pipeline"
     description: "Instance Segmentation Pipeline"

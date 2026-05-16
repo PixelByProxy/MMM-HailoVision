@@ -87,6 +87,7 @@ hailo-pose =                "hailo_apps.python.pipeline_apps.pose_estimation.pos
 hailo-seg =                 "hailo_apps.python.pipeline_apps.instance_segmentation.instance_segmentation:main"
 hailo-detect-simple =       "hailo_apps.python.pipeline_apps.detection_simple.detection_simple:main"
 hailo-face-recon =          "hailo_apps.python.pipeline_apps.face_recognition.face_recognition:main"
+hailo-magic-mirror =        "hailo_apps.python.pipeline_apps.magic_mirror.magic_mirror:main"
 hailo-tiling =              "hailo_apps.python.pipeline_apps.tiling.tiling:main"
 hailo-multisource =         "hailo_apps.python.pipeline_apps.multisource.multisource:main"
 hailo-reid =                "hailo_apps.python.pipeline_apps.reid_multisource.reid_multisource:main"
