@@ -108,7 +108,16 @@ Please refer to the https://voxel51.com/fiftyone/ guide for more details about u
 
 ## Discord Notifications
 
-- Configure the `DISCORD_ENABLED`, `DISCORD_TOKEN`, and `DISCORD_CHANNEL_ID` in `magic_mirror.py` to enable Discord notifications.
+- Configure Discord through environment variables before starting the app:
+
+   ```bash
+   export DISCORD_ENABLED=true
+   export DISCORD_TOKEN="YOUR_BOT_TOKEN"
+   export DISCORD_CHANNEL_ID="YOUR_CHANNEL_ID"
+   python magic_mirror.py
+   ```
+
+- If these variables are not set, Discord notifications remain disabled by default.
 - Notifications are sent when a face is detected, with a text message and confidence score.
 
 ---

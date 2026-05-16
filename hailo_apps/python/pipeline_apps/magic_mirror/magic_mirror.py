@@ -23,13 +23,25 @@ from hailo_apps.python.pipeline_apps.magic_mirror.magic_mirror_pipeline import G
 hailo_logger = get_logger(__name__)
 # endregion imports
 
+
+def get_env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+def get_env_str(name, default=""):
+    return os.getenv(name, default).strip()
+
+
 # region Constants
 TELEGRAM_ENABLED = False
 TELEGRAM_TOKEN = ''
 TELEGRAM_CHAT_ID = ''
-DISCORD_ENABLED = False
-DISCORD_TOKEN = ''
-DISCORD_CHANNEL_ID = ''
+DISCORD_ENABLED = get_env_bool("HAILO_DISCORD_ENABLED", False)
+DISCORD_TOKEN = get_env_str("HAILO_DISCORD_TOKEN")
+DISCORD_CHANNEL_ID = get_env_str("HAILO_DISCORD_CHANNEL_ID")
 GESTURE_HISTORY_LENGTH = 12
 GESTURE_MIN_DELTA_RATIO = 0.35
 GESTURE_MIN_DELTA_PIXELS = 80
