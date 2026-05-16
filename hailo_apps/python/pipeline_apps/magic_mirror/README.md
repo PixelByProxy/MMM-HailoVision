@@ -23,6 +23,8 @@ This project is moderately advanced and is recommended for use after gaining som
 
 The system supports real-time face recognition using GStreamer pipelines and the Hailo neural network AI accelerator.
 
+Magic Mirror also runs pose estimation in run mode to recognize basic gestures. The initial supported gestures are `swipe_left` and `swipe_right`; when detected, they are printed and sent through the configured notification handlers.
+
 It can train the known persons' catalog *from a provided directory with images of persons* (train mode below).
 
 The information is managed in a local ("on a file") database optimized for storing and indexing AI embeddings, called LanceDB. This is a significant improvement over the commonly used static string-based files, such as JSON.

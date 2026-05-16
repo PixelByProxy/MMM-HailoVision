@@ -592,6 +592,33 @@ face_recognition: &face_recognition_app
         - name: arcface_mobilefacenet
           source: mz
 
+magic_mirror:
+  models:
+    hailo8:
+      default:
+        - name: scrfd_10g
+          source: mz
+        - name: arcface_mobilefacenet
+          source: mz
+        - name: yolov8m_pose
+          source: mz
+    hailo8l:
+      default:
+        - name: scrfd_2.5g
+          source: mz
+        - name: arcface_mobilefacenet
+          source: mz
+        - name: yolov8s_pose
+          source: mz
+    hailo10h:
+      default:
+        - name: scrfd_10g
+          source: mz
+        - name: arcface_mobilefacenet
+          source: mz
+        - name: yolov8m_pose
+          source: mz
+
 instance_segmentation: &instance_segmentation_app
   models:
     hailo8:

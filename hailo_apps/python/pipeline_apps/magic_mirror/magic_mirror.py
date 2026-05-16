@@ -1,6 +1,7 @@
 # region imports
 # Standard library imports
 import datetime
+from collections import deque
 from datetime import datetime
 import os
 os.environ["GST_PLUGIN_FEATURE_RANK"] = "vaapidecodebin:NONE"
@@ -13,6 +14,7 @@ from gi.repository import Gst
 # Local application-specific imports
 import hailo
 from hailo_apps.python.core.common.discord_handler import DiscordHandler
+from hailo_apps.python.core.common.buffer_utils import get_caps_from_pad, get_numpy_from_buffer_efficient
 from hailo_apps.python.core.common.hailo_logger import get_logger
 from hailo_apps.python.core.common.telegram_handler import TelegramHandler
 from hailo_apps.python.core.gstreamer.gstreamer_app import app_callback_class
@@ -28,6 +30,11 @@ TELEGRAM_CHAT_ID = ''
 DISCORD_ENABLED = False
 DISCORD_TOKEN = ''
 DISCORD_CHANNEL_ID = ''
+GESTURE_HISTORY_LENGTH = 12
+GESTURE_MIN_DELTA_RATIO = 0.35
+GESTURE_MIN_DELTA_PIXELS = 80
+GESTURE_MAX_VERTICAL_RATIO = 0.45
+GESTURE_COOLDOWN_FRAMES = 45
 # endregion
 
 
@@ -36,6 +43,8 @@ class user_callbacks_class(app_callback_class):
         super().__init__()
         self.frame = None
         self.latest_track_id = -1
+        self.gesture_tracks = {}
+        self.latest_gesture_frame = {}
 
         # Telegram settings as instance attributes
         self.telegram_enabled = TELEGRAM_ENABLED
@@ -76,12 +85,52 @@ class user_callbacks_class(app_callback_class):
             self.discord_handler.send_notification(name, global_id, confidence, frame)
     # endregion
 
+    def update_gesture(self, track_id, wrist_name, x, y, bbox_width, bbox_height):
+        """
+        Track wrist movement and return a recognized gesture name when a swipe completes.
+        """
+        current_frame = self.get_count()
+        state_key = (track_id, wrist_name)
+        history = self.gesture_tracks.setdefault(state_key, deque(maxlen=GESTURE_HISTORY_LENGTH))
+        history.append((current_frame, x, y))
+
+        if len(history) < GESTURE_HISTORY_LENGTH:
+            return None
+
+        first_frame, first_x, first_y = history[0]
+        _, last_x, last_y = history[-1]
+        horizontal_delta = last_x - first_x
+        vertical_delta = abs(last_y - first_y)
+        horizontal_threshold = max(GESTURE_MIN_DELTA_PIXELS, bbox_width * GESTURE_MIN_DELTA_RATIO)
+        vertical_threshold = max(GESTURE_MIN_DELTA_PIXELS, bbox_height * GESTURE_MAX_VERTICAL_RATIO)
+
+        if current_frame - first_frame > GESTURE_HISTORY_LENGTH * 2:
+            history.clear()
+            return None
+
+        if abs(horizontal_delta) < horizontal_threshold or vertical_delta > vertical_threshold:
+            return None
+
+        gesture_name = "swipe_right" if horizontal_delta > 0 else "swipe_left"
+        cooldown_key = (track_id, gesture_name)
+        last_gesture_frame = self.latest_gesture_frame.get(cooldown_key, -GESTURE_COOLDOWN_FRAMES)
+        if current_frame - last_gesture_frame < GESTURE_COOLDOWN_FRAMES:
+            history.clear()
+            return None
+
+        self.latest_gesture_frame[cooldown_key] = current_frame
+        history.clear()
+        return gesture_name
+
 
 def app_callback(element, buffer, user_data):
     # Note: Frame counting is handled automatically by the framework wrapper
     if buffer is None:
         hailo_logger.warning("Received None buffer.")
         return
+    pad = element.get_static_pad("src")
+    format, width, height = get_caps_from_pad(pad)
+    frame = None
     roi = hailo.get_roi_from_buffer(buffer)
     detections = roi.get_objects_typed(hailo.HAILO_DETECTION)
     for detection in detections:
@@ -103,7 +152,72 @@ def app_callback(element, buffer, user_data):
                     if track_id > user_data.latest_track_id:
                         user_data.latest_track_id = track_id
                         print(string_to_print)
+        elif label == "person":
+            track_id = 0
+            track = detection.get_objects_typed(hailo.HAILO_UNIQUE_ID)
+            if len(track) > 0:
+                track_id = track[0].get_id()
+
+            landmarks = detection.get_objects_typed(hailo.HAILO_LANDMARKS)
+            if not landmarks or not format or not width or not height:
+                continue
+
+            bbox = detection.get_bbox()
+            points = landmarks[0].get_points()
+            keypoints = get_keypoints()
+            for wrist_name in ("left_wrist", "right_wrist"):
+                point = points[keypoints[wrist_name]]
+                x = int((point.x() * bbox.width() + bbox.xmin()) * width)
+                y = int((point.y() * bbox.height() + bbox.ymin()) * height)
+                gesture_name = user_data.update_gesture(
+                    track_id=track_id,
+                    wrist_name=wrist_name,
+                    x=x,
+                    y=y,
+                    bbox_width=bbox.width() * width,
+                    bbox_height=bbox.height() * height,
+                )
+                if not gesture_name:
+                    continue
+
+                confidence = min(1.0, max(0.0, detection_confidence))
+                print(
+                    f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]: '
+                    f'Gesture recognition: {gesture_name} from {wrist_name} '
+                    f'for person ID: {track_id} (Confidence: {confidence:.1f})'
+                )
+                if user_data.telegram_enabled or user_data.discord_enabled:
+                    if frame is None:
+                        frame = get_numpy_from_buffer_efficient(buffer, format, width, height)
+                    user_data.send_notification(
+                        name=gesture_name,
+                        global_id=f"gesture:{track_id}:{gesture_name}",
+                        confidence=confidence,
+                        frame=frame,
+                    )
     return
+
+
+def get_keypoints():
+    return {
+        "nose": 0,
+        "left_eye": 1,
+        "right_eye": 2,
+        "left_ear": 3,
+        "right_ear": 4,
+        "left_shoulder": 5,
+        "right_shoulder": 6,
+        "left_elbow": 7,
+        "right_elbow": 8,
+        "left_wrist": 9,
+        "right_wrist": 10,
+        "left_hip": 11,
+        "right_hip": 12,
+        "left_knee": 13,
+        "right_knee": 14,
+        "left_ankle": 15,
+        "right_ankle": 16,
+    }
 
 
 def main():

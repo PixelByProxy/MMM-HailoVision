@@ -34,8 +34,12 @@ from hailo_apps.python.core.common.buffer_utils import get_numpy_from_buffer_eff
 from hailo_apps.python.core.gstreamer.gstreamer_app import GStreamerApp
 from hailo_apps.python.core.common.defines import (
     RESOURCES_SO_DIR_NAME, 
+    MAGIC_MIRROR_PIPELINE,
+    MAGIC_MIRROR_APP_TITLE,
     FACE_RECOGNITION_PIPELINE,
-    FACE_RECOGNITION_APP_TITLE,
+    POSE_ESTIMATION_PIPELINE,
+    POSE_ESTIMATION_POSTPROCESS_FUNCTION,
+    POSE_ESTIMATION_POSTPROCESS_SO_FILENAME,
     FACE_DETECTION_POSTPROCESS_SO_FILENAME, 
     FACE_RECOGNITION_POSTPROCESS_SO_FILENAME, 
     FACE_ALIGN_POSTPROCESS_SO_FILENAME, 
@@ -68,14 +72,14 @@ class GStreamerMagicMirrorApp(GStreamerApp):
             parser = get_pipeline_parser()
         parser.add_argument("--mode", default='run', help="The mode of the application: run, train, delete")
         
-        # Configure --hef-path for multi-model support (face detection + face recognition)
+        # Configure --hef-path for multi-model support (face detection + face recognition + pose)
         configure_multi_model_hef_path(parser)
         
         # Handle --list-models flag before full initialization
-        handle_list_models_flag(parser, FACE_RECOGNITION_PIPELINE)
+        handle_list_models_flag(parser, MAGIC_MIRROR_PIPELINE)
         
         super().__init__(parser, user_data)
-        setproctitle.setproctitle(FACE_RECOGNITION_APP_TITLE)
+        setproctitle.setproctitle(MAGIC_MIRROR_APP_TITLE)
 
         # Criteria for when a candidate frame is good enough to try recognize a person from it (e.g., skip the first few frames since in them person only entered the frame and usually is blurry)
         json_file_path = os.path.join(os.path.dirname(__file__), "face_recon_algo_params.json")
@@ -114,15 +118,16 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         self.processed_names = set()  # ((key-name, val-global_id)) for train mode - pipeline will be playing for 2 seconds, so we need to ensure each person will be processed only once
         self.processed_files = set()  # for train mode - pipeline will be playing for 2 seconds, so we need to ensure each file will be processed only once
 
-        # Resolve HEF paths for multi-model app (face detection + face recognition)
-        # Uses --hef-path arguments if provided, otherwise uses defaults
-        models = resolve_hef_paths(
-            hef_paths=self.options_menu.hef_path,  # List from action='append' or None
-            app_name=FACE_RECOGNITION_PIPELINE,
-            arch=self.arch,
-        )
+        # Resolve HEF paths for multi-model app.
+        # Train mode only needs face detection + face recognition.
+        app_name = MAGIC_MIRROR_PIPELINE if self.options_menu.mode == 'run' else FACE_RECOGNITION_PIPELINE
+        hef_paths = self.options_menu.hef_path
+        if self.options_menu.mode != 'run' and hef_paths:
+            hef_paths = hef_paths[:2]
+        models = resolve_hef_paths(hef_paths=hef_paths, app_name=app_name, arch=self.arch)
         self.hef_path_detection = models[0].path
         self.hef_path_recognition = models[1].path
+        self.hef_path_pose = models[2].path if len(models) > 2 else None
     
         if self.arch in (HAILO8_ARCH, HAILO10H_ARCH):
             self.detection_func = SCRFD_10G_POSTPROCESS_FUNCTION
@@ -145,6 +150,7 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         self.post_process_so_face_recognition = get_resource_path(pipeline_name=None, resource_type=RESOURCES_SO_DIR_NAME, arch=self.arch, model=FACE_RECOGNITION_POSTPROCESS_SO_FILENAME)
         self.post_process_so_face_align = get_resource_path(pipeline_name=None, resource_type=RESOURCES_SO_DIR_NAME, arch=self.arch, model=FACE_ALIGN_POSTPROCESS_SO_FILENAME)
         self.post_process_so_cropper = get_resource_path(pipeline_name=None, resource_type=RESOURCES_SO_DIR_NAME, arch=self.arch, model=FACE_CROP_POSTPROCESS_SO_FILENAME)
+        self.post_process_so_pose = get_resource_path(POSE_ESTIMATION_PIPELINE, RESOURCES_SO_DIR_NAME, self.arch, POSE_ESTIMATION_POSTPROCESS_SO_FILENAME)
         
         # Callbacks: bindings between the C++ & Python code
         self.app_callback = app_callback
@@ -193,8 +199,14 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         
     def get_pipeline_string(self):
         source_pipeline = self.get_source_pipeline()
-        detection_pipeline = INFERENCE_PIPELINE(hef_path=self.hef_path_detection, post_process_so=self.post_process_so_scrfd, post_function_name=self.detection_func, batch_size=self.batch_size, config_json=get_resource_path(pipeline_name=None, resource_type=RESOURCES_JSON_DIR_NAME, arch=self.arch, model=FACE_DETECTION_JSON_NAME))
-        detection_pipeline_wrapper = INFERENCE_PIPELINE_WRAPPER(detection_pipeline)
+        pose_pipeline_wrapper = ""
+        pose_tracker_pipeline = ""
+        if self.options_menu.mode == 'run':
+            pose_pipeline = INFERENCE_PIPELINE(hef_path=self.hef_path_pose, post_process_so=self.post_process_so_pose, post_function_name=POSE_ESTIMATION_POSTPROCESS_FUNCTION, batch_size=self.batch_size, name='pose_inference')
+            pose_pipeline_wrapper = INFERENCE_PIPELINE_WRAPPER(pose_pipeline, name='pose_inference_wrapper')
+            pose_tracker_pipeline = TRACKER_PIPELINE(class_id=0, name='hailo_pose_tracker')
+        detection_pipeline = INFERENCE_PIPELINE(hef_path=self.hef_path_detection, post_process_so=self.post_process_so_scrfd, post_function_name=self.detection_func, batch_size=self.batch_size, config_json=get_resource_path(pipeline_name=None, resource_type=RESOURCES_JSON_DIR_NAME, arch=self.arch, model=FACE_DETECTION_JSON_NAME), name='face_detection_inference')
+        detection_pipeline_wrapper = INFERENCE_PIPELINE_WRAPPER(detection_pipeline, name='face_detection_wrapper')
         tracker_pipeline = TRACKER_PIPELINE(class_id=-1, kalman_dist_thr=0.7, iou_thr=0.8, init_iou_thr=0.9, keep_new_frames=2, keep_tracked_frames=6, keep_lost_frames=8, keep_past_metadata=True, name='hailo_face_tracker')
         mobile_facenet_pipeline = INFERENCE_PIPELINE(hef_path=self.hef_path_recognition, post_process_so=self.post_process_so_face_recognition, post_function_name=self.recognition_func, batch_size=self.batch_size, config_json=None, name='face_recognition_inference')
         cropper_pipeline = CROPPER_PIPELINE(inner_pipeline=(f'hailofilter so-path={self.post_process_so_face_align} '
@@ -212,15 +224,18 @@ class GStreamerMagicMirrorApp(GStreamerApp):
             vector_db_callback_pipeline = USER_CALLBACK_PIPELINE(name=self.train_vector_db_callback_name)
             display_pipeline = DISPLAY_PIPELINE(video_sink=self.video_sink, sync=self.sync, show_fps=self.show_fps)
 
-        return (
-            f'{source_pipeline} ! '
-            f'{detection_pipeline_wrapper} ! '
-            f'{tracker_pipeline} ! '
-            f'{cropper_pipeline} ! '
-            f'{vector_db_callback_pipeline} ! '
-            f'{user_callback_pipeline} ! '
-            f'{display_pipeline}'
-        )
+        pipeline_parts = [source_pipeline]
+        if pose_pipeline_wrapper:
+            pipeline_parts.extend([pose_pipeline_wrapper, pose_tracker_pipeline])
+        pipeline_parts.extend([
+            detection_pipeline_wrapper,
+            tracker_pipeline,
+            cropper_pipeline,
+            vector_db_callback_pipeline,
+            user_callback_pipeline,
+            display_pipeline,
+        ])
+        return ' ! '.join(pipeline_parts)
     
     def run(self):
         if self.options_menu.mode == 'run':
@@ -345,7 +360,8 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         return False
 
     def vector_db_callback(self, pad, info, user_data):
-        tracker_name = self.tracker.get_trackers_list()[0]  # we have a single tracker
+        tracker_names = self.tracker.get_trackers_list()
+        tracker_name = 'hailo_face_tracker' if 'hailo_face_tracker' in tracker_names else tracker_names[0]
         buffer = info.get_buffer()
         if buffer is None:
             return Gst.PadProbeReturn.OK
