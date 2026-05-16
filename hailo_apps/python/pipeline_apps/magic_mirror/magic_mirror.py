@@ -45,6 +45,7 @@ class user_callbacks_class(app_callback_class):
         self.latest_track_id = -1
         self.gesture_tracks = {}
         self.latest_gesture_frame = {}
+        self.current_person_label = None
 
         # Telegram settings as instance attributes
         self.telegram_enabled = TELEGRAM_ENABLED
@@ -84,6 +85,16 @@ class user_callbacks_class(app_callback_class):
         ):
             self.discord_handler.send_notification(name, global_id, confidence, frame)
     # endregion
+
+    def update_current_person(self, person_label):
+        """
+        Reset gesture state when face recognition switches to a different person.
+        """
+        if person_label == self.current_person_label:
+            return
+        self.current_person_label = person_label
+        self.gesture_tracks.clear()
+        self.latest_gesture_frame.clear()
 
     def update_gesture(self, track_id, wrist_name, x, y, bbox_width, bbox_height):
         """
@@ -145,10 +156,12 @@ def app_callback(element, buffer, user_data):
             classifications = detection.get_objects_typed(hailo.HAILO_CLASSIFICATION)
             if len(classifications) > 0:
                 for classification in classifications:
-                    if classification.get_label() == 'Unknown':
+                    person_label = classification.get_label()
+                    user_data.update_current_person(person_label)
+                    if person_label == 'Unknown':
                         string_to_print += 'Unknown person detected'
                     else:
-                        string_to_print += f'Person recognition: {classification.get_label()} (Confidence: {classification.get_confidence():.1f})'
+                        string_to_print += f'Person recognition: {person_label} (Confidence: {classification.get_confidence():.1f})'
                     if track_id > user_data.latest_track_id:
                         user_data.latest_track_id = track_id
                         print(string_to_print)
