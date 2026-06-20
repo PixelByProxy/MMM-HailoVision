@@ -111,9 +111,9 @@ Please refer to the https://voxel51.com/fiftyone/ guide for more details about u
 - Configure Discord through environment variables before starting the app:
 
    ```bash
-   export DISCORD_ENABLED=true
-   export DISCORD_TOKEN="YOUR_BOT_TOKEN"
-   export DISCORD_CHANNEL_ID="YOUR_CHANNEL_ID"
+   export HAILO_DISCORD_ENABLED=true
+   export HAILO_DISCORD_TOKEN="YOUR_BOT_TOKEN"
+   export HAILO_DISCORD_CHANNEL_ID="YOUR_CHANNEL_ID"
    python magic_mirror.py
    ```
 
