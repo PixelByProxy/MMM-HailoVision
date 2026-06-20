@@ -140,7 +140,7 @@ if __name__ == "__main__":
         table_name="persons",
         schema=Record,
         threshold=0.35,
-        database_dir=os.path.join('../../pipeline_apps/face_recognition', FACE_RECON_DATABASE_DIR_NAME),
-        samples_dir=os.path.join('../../pipeline_apps/face_recognition', FACE_RECON_SAMPLES_DIR_NAME)
+        database_dir=os.path.join('../../pipeline_apps/magic_mirror', FACE_RECON_DATABASE_DIR_NAME),
+        samples_dir=os.path.join('../../pipeline_apps/magic_mirror', FACE_RECON_SAMPLES_DIR_NAME)
     )
     visualize_embeddings(db_handler)
