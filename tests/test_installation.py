@@ -646,15 +646,6 @@ class TestConfigFiles:
         
         assert config is not None, "resources_config.yaml is empty or invalid"
         logger.info(f"resources_config.yaml is valid: {RESOURCES_CONFIG_PATH}")
-    
-    def test_meson_build_exists(self):
-        """Verify postprocess meson.build exists."""
-        from conftest import POSTPROCESS_MESON_PATH
-        
-        assert POSTPROCESS_MESON_PATH.exists(), (
-            f"postprocess meson.build not found: {POSTPROCESS_MESON_PATH}"
-        )
-        logger.info(f"meson.build exists: {POSTPROCESS_MESON_PATH}")
 
 
 # ============================================================================

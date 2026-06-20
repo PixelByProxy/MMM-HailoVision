@@ -68,7 +68,8 @@ except ImportError:
 
 CONFIG_DIR = REPO_ROOT / "hailo_apps" / "config"
 RESOURCES_CONFIG_PATH = CONFIG_DIR / "resources_config.yaml"
-POSTPROCESS_MESON_PATH = REPO_ROOT / "hailo_apps" / "postprocess" / "cpp" / "meson.build"
+# This build ships prebuilt postprocess .so files (no C++ sources / meson build).
+POSTPROCESS_SO_DIR = REPO_ROOT / "hailo_apps" / "postprocess" / "build.release" / "cpp"
 
 # Delay settings for test cleanup to prevent resource contention
 USB_CAMERA_CLEANUP_DELAY = 1.0  # seconds - after USB camera tests
@@ -133,24 +134,15 @@ def pytest_runtest_teardown(item, nextitem):
 # UTILITY FUNCTIONS
 # ============================================================================
 
-def parse_meson_shared_libraries() -> List[str]:
-    """Parse meson.build to extract shared library names.
+def get_prebuilt_shared_libraries() -> List[str]:
+    """List the prebuilt postprocess shared library filenames shipped with this build.
 
     Returns:
-        List of shared library filenames (e.g., ['libyolo_hailortpp_postprocess.so', ...])
+        List of shared library filenames (e.g., ['libscrfd.so', ...])
     """
-    if not POSTPROCESS_MESON_PATH.exists():
+    if not POSTPROCESS_SO_DIR.exists():
         return []
-
-    with open(POSTPROCESS_MESON_PATH, "r") as f:
-        content = f.read()
-
-    # Match shared_library('name', ...) pattern
-    pattern = r"shared_library\s*\(\s*['\"]([^'\"]+)['\"]"
-    matches = re.findall(pattern, content)
-
-    # Convert to .so filename format: libNAME.so
-    return [f"lib{name}.so" for name in matches]
+    return sorted(p.name for p in POSTPROCESS_SO_DIR.glob("*.so"))
 
 
 # ============================================================================
@@ -214,8 +206,8 @@ def expected_images() -> List[str]:
 
 @pytest.fixture(scope="session")
 def expected_so_files() -> List[str]:
-    """Fixture providing list of expected .so filenames from meson.build."""
-    return parse_meson_shared_libraries()
+    """Fixture providing list of expected .so filenames (prebuilt postprocess libs)."""
+    return get_prebuilt_shared_libraries()
 
 
 @pytest.fixture(scope="session")

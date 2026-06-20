@@ -42,34 +42,6 @@ dev = [
     "pytest-timeout>=2.0.0",
 ]
 
-gen-ai = [
-    "PyAudio",
-    "piper-tts<=1.3.0",
-    "sounddevice==0.5.1",
-    "webrtcvad-wheels",
-    "requests",
-    "psutil",
-    "soundfile",
-    "openwakeword",
-    "geopy",
-    "json-repair",
-    "flask",
-    "pydantic",
-]
-
-ocr = [
-    "paddlepaddle",
-    "shapely",
-    "pyclipper",
-    "symspellpy",
-]
-
-speech-rec = [
-    "transformers==4.50.1",
-    "sounddevice==0.5.1",
-    "torch==2.6.0",
-]
-
 [project.urls]
 Homepage = "https://github.com/hailo-ai/hailo-apps"
 Repository = "https://github.com/hailo-ai/hailo-apps"
@@ -78,22 +50,9 @@ Issues = "https://github.com/hailo-ai/hailo-apps/issues"
 [project.scripts]
 get-usb-camera =            "hailo_apps.python.core.common.camera_utils:main"
 hailo-post-install =        "hailo_apps.installation.post_install:main"
-hailo-compile-postprocess = "hailo_apps.installation.compile_cpp:main"
 hailo-set-env =             "hailo_apps.installation.set_env:main"
 hailo-download-resources =  "hailo_apps.installation.download_resources:main"
-hailo-detect =              "hailo_apps.python.pipeline_apps.detection.detection:main"
-hailo-depth =               "hailo_apps.python.pipeline_apps.depth.depth:main"
-hailo-pose =                "hailo_apps.python.pipeline_apps.pose_estimation.pose_estimation:main"
-hailo-seg =                 "hailo_apps.python.pipeline_apps.instance_segmentation.instance_segmentation:main"
-hailo-detect-simple =       "hailo_apps.python.pipeline_apps.detection_simple.detection_simple:main"
-hailo-face-recon =          "hailo_apps.python.pipeline_apps.face_recognition.face_recognition:main"
 hailo-magic-mirror =        "hailo_apps.python.pipeline_apps.magic_mirror.magic_mirror:main"
-hailo-tiling =              "hailo_apps.python.pipeline_apps.tiling.tiling:main"
-hailo-multisource =         "hailo_apps.python.pipeline_apps.multisource.multisource:main"
-hailo-reid =                "hailo_apps.python.pipeline_apps.reid_multisource.reid_multisource:main"
-hailo-clip =                "hailo_apps.python.pipeline_apps.clip.clip:main"
-hailo-ocr  =                "hailo_apps.python.pipeline_apps.paddle_ocr.paddle_ocr:main"
-hailo-audio-troubleshoot =  "hailo_apps.python.gen_ai_apps.gen_ai_utils.voice_processing.audio_troubleshoot:main"
 
 [tool.setuptools]
 include-package-data = true
@@ -103,9 +62,7 @@ include = ["hailo_apps*", "local_resources*"]
 
 [tool.setuptools.package-data]
 "hailo_apps.postprocess" = [
-    "meson.build",
-    "compile_postprocess.sh",
-    "cpp/**/*",
+    "build.release/cpp/*.so",
 ]
 "hailo_apps.config" = [
     "*.yaml",

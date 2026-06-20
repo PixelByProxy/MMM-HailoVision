@@ -1237,9 +1237,10 @@ run_post_install() {
     fi
 
     # Build post-install command
-    local post_install_args="--group '${DOWNLOAD_GROUP}'"
+    # Magic-mirror-only build ships prebuilt postprocess .so files; skip C++ compilation.
+    local post_install_args="--group '${DOWNLOAD_GROUP}' --skip-compile"
     if [[ "$DOWNLOAD_GROUP" == "all" ]]; then
-        post_install_args="--all"
+        post_install_args="--all --skip-compile"
     fi
 
     if [[ "${DRY_RUN}" == true ]]; then
