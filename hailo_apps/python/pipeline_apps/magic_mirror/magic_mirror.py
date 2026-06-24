@@ -47,6 +47,11 @@ GESTURE_MIN_DELTA_RATIO = 0.35
 GESTURE_MIN_DELTA_PIXELS = 80
 GESTURE_MAX_VERTICAL_RATIO = 0.45
 GESTURE_COOLDOWN_FRAMES = 45
+# Number of samples averaged at each end of the window to reject single-frame keypoint jitter.
+GESTURE_SMOOTHING_SAMPLES = 3
+# Fraction of total horizontal travel that must be in the dominant direction for a clean swipe
+# (rejects back-and-forth waves and noisy jitter that net out to a false direction).
+GESTURE_DIRECTION_CONSISTENCY = 0.75
 # endregion
 
 
@@ -111,6 +116,10 @@ class user_callbacks_class(app_callback_class):
     def update_gesture(self, track_id, wrist_name, x, y, bbox_width, bbox_height):
         """
         Track wrist movement and return a recognized gesture name when a swipe completes.
+
+        Direction is reported from the person's perspective (mirror-style): "swipe_right"
+        means the user moved their hand toward their own right. The camera feed is not
+        horizontally flipped, so the user's right is toward decreasing image-x.
         """
         current_frame = self.get_count()
         state_key = (track_id, wrist_name)
@@ -120,21 +129,43 @@ class user_callbacks_class(app_callback_class):
         if len(history) < GESTURE_HISTORY_LENGTH:
             return None
 
-        first_frame, first_x, first_y = history[0]
-        _, last_x, last_y = history[-1]
-        horizontal_delta = last_x - first_x
-        vertical_delta = abs(last_y - first_y)
-        horizontal_threshold = max(GESTURE_MIN_DELTA_PIXELS, bbox_width * GESTURE_MIN_DELTA_RATIO)
-        vertical_threshold = max(GESTURE_MIN_DELTA_PIXELS, bbox_height * GESTURE_MAX_VERTICAL_RATIO)
-
+        first_frame = history[0][0]
+        # Drop stale windows where the wrist lingered (slow drift, not a deliberate swipe).
         if current_frame - first_frame > GESTURE_HISTORY_LENGTH * 2:
             history.clear()
             return None
 
-        if abs(horizontal_delta) < horizontal_threshold or vertical_delta > vertical_threshold:
+        xs = [px for _, px, _ in history]
+        ys = [py for _, _, py in history]
+
+        # Average a few samples at each end so a single bad keypoint can't flip the result.
+        k = min(GESTURE_SMOOTHING_SAMPLES, len(xs) // 2)
+        start_x = sum(xs[:k]) / k
+        end_x = sum(xs[-k:]) / k
+        start_y = sum(ys[:k]) / k
+        end_y = sum(ys[-k:]) / k
+        horizontal_delta = end_x - start_x
+        vertical_delta = abs(end_y - start_y)
+
+        # Require the motion to be consistently one-directional so back-and-forth waves
+        # and jitter don't register as a swipe.
+        step_deltas = [xs[i + 1] - xs[i] for i in range(len(xs) - 1)]
+        forward = sum(d for d in step_deltas if d > 0)
+        backward = -sum(d for d in step_deltas if d < 0)
+        total_travel = forward + backward
+        consistency = max(forward, backward) / total_travel if total_travel else 0.0
+
+        horizontal_threshold = max(GESTURE_MIN_DELTA_PIXELS, bbox_width * GESTURE_MIN_DELTA_RATIO)
+        vertical_threshold = max(GESTURE_MIN_DELTA_PIXELS, bbox_height * GESTURE_MAX_VERTICAL_RATIO)
+
+        if (
+            abs(horizontal_delta) < horizontal_threshold
+            or vertical_delta > vertical_threshold
+            or consistency < GESTURE_DIRECTION_CONSISTENCY
+        ):
             return None
 
-        gesture_name = "swipe_right" if horizontal_delta > 0 else "swipe_left"
+        gesture_name = "swipe_right" if horizontal_delta < 0 else "swipe_left"
         cooldown_key = (track_id, gesture_name)
         last_gesture_frame = self.latest_gesture_frame.get(cooldown_key, -GESTURE_COOLDOWN_FRAMES)
         if current_frame - last_gesture_frame < GESTURE_COOLDOWN_FRAMES:
