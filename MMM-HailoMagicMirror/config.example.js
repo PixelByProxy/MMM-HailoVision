@@ -32,9 +32,17 @@
       // Face recognition: greet known people, run a command for a specific
       // person, and fall back for anyone else.
       face_recognition: {
-        Ryan: {
+        Alice: {
           notification: "SHOW_ALERT",
-          payload: { title: "Welcome back", message: "Hi Ryan!", timer: 4000 }
+          payload: { title: "Welcome back", message: "Hi Alice!", timer: 4000 }
+        },
+        Anna: {
+          notification: "SHOW_ALERT",
+          payload: { title: "Welcome back", message: "Hi Anna!", timer: 4000 }
+        },
+        Bob: {
+          notification: "SHOW_ALERT",
+          payload: { title: "Welcome back", message: "Hi Bob!", timer: 4000 }
         },
         Unknown: {
           notification: "SHOW_ALERT",
@@ -56,12 +64,19 @@
       // etc.), prepends the repo to PYTHONPATH, and loads Hailo env vars from
       // /usr/local/hailo/resources/.env. Plain "python" has none of that.
       // No --input => bundled test video. For a USB webcam append "--input usb".
-      // --headless drops the OpenCV/GStreamer preview window so the pipeline
-      // runs without a display (recommended here; MagicMirror is the display).
+      // The pipeline must run once in "--mode train" to populate the face vector
+      // DB from existing images, THEN start the headless run. Both are chained
+      // in one command: train runs to completion, and on success `exec` replaces
+      // the shell with the long-running headless pipeline (so node_helper still
+      // supervises a single process). --headless drops the OpenCV/GStreamer
+      // preview window so the pipeline runs without a display (recommended here;
+      // MagicMirror is the display).
       command: "bash",
       args: [
         "-c",
-        "source setup_env.sh && exec python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --headless"
+        "source setup_env.sh && " +
+          "python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --mode train && " +
+          "exec python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --headless"
       ],
       // Absolute path to the hailo-apps repo root. Required when this module is
       // deployed into MagicMirror's modules/ dir (default cwd would otherwise be

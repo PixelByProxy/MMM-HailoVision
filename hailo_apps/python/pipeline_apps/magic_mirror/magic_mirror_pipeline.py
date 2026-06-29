@@ -36,7 +36,6 @@ from hailo_apps.python.core.common.defines import (
     RESOURCES_SO_DIR_NAME, 
     MAGIC_MIRROR_PIPELINE,
     MAGIC_MIRROR_APP_TITLE,
-    FACE_RECOGNITION_PIPELINE,
     POSE_ESTIMATION_PIPELINE,
     POSE_ESTIMATION_POSTPROCESS_FUNCTION,
     POSE_ESTIMATION_POSTPROCESS_SO_FILENAME,
@@ -127,13 +126,16 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         self.processed_names = set()  # ((key-name, val-global_id)) for train mode - pipeline will be playing for 2 seconds, so we need to ensure each person will be processed only once
         self.processed_files = set()  # for train mode - pipeline will be playing for 2 seconds, so we need to ensure each file will be processed only once
 
-        # Resolve HEF paths for multi-model app.
-        # Train mode only needs face detection + face recognition.
-        app_name = MAGIC_MIRROR_PIPELINE if self.options_menu.mode == 'run' else FACE_RECOGNITION_PIPELINE
+        # Resolve HEF paths for multi-model app. All three models are registered
+        # under MAGIC_MIRROR_PIPELINE in resources_config.yaml (detection,
+        # recognition, pose). Train mode only needs the first two (face
+        # detection + face recognition), so drop the pose model after resolving.
         hef_paths = self.options_menu.hef_path
         if self.options_menu.mode != 'run' and hef_paths:
             hef_paths = hef_paths[:2]
-        models = resolve_hef_paths(hef_paths=hef_paths, app_name=app_name, arch=self.arch)
+        models = resolve_hef_paths(hef_paths=hef_paths, app_name=MAGIC_MIRROR_PIPELINE, arch=self.arch)
+        if self.options_menu.mode != 'run':
+            models = models[:2]
         self.hef_path_detection = models[0].path
         self.hef_path_recognition = models[1].path
         self.hef_path_pose = models[2].path if len(models) > 2 else None
@@ -165,11 +167,13 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         self.app_callback = app_callback
         self.vector_db_callback_name = "vector_db_callback"
         self.train_vector_db_callback_name = "train_vector_db_callback"
-        self.create_pipeline()  # initialize self.pipeline
         if self.options_menu.mode == 'run':
+            self.create_pipeline()  # initialize self.pipeline
             self.connect_vector_db_callback()
-        else:  # train
-            self.connect_train_vector_db_callback()
+        # Train mode builds (and tears down) a fresh pipeline per image in
+        # run_training(); don't create one here. At this point self.current_file
+        # is still None, so a pipeline built now would be a junk
+        # 'multifilesrc location=None' that holds a vdevice and is never used.
         self.track_id_frame_count = {}  # Dictionary to track frame counts for each track ID - avoid porocessing first frames since usually they are blurry since person just entered the frame 
         self.tracker = HailoTracker.get_instance()  # tracker object
 
@@ -290,7 +294,15 @@ class GStreamerMagicMirrorApp(GStreamerApp):
                     print(f"Error processing image {image_file}: {e}")
                 finally:
                     if self.pipeline:
+                        # set_state(NULL) is asynchronous. Block until the
+                        # transition completes so the hailonet vdevice is fully
+                        # released before the next image builds a new pipeline -
+                        # otherwise the next hailonet fails with
+                        # HAILO_OUT_OF_PHYSICAL_DEVICES. Drop the reference so GC
+                        # can reclaim the elements.
                         self.pipeline.set_state(Gst.State.NULL)
+                        self.pipeline.get_state(5 * Gst.SECOND)
+                        self.pipeline = None
         print("Training completed")
 
     def connect_vector_db_callback(self):

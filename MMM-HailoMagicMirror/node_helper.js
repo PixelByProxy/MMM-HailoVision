@@ -12,8 +12,14 @@
  */
 const NodeHelper = require("node_helper");
 const Log = require("logger");
-const { exec, spawn } = require("child_process");
+const { exec, execSync, spawn } = require("child_process");
 const path = require("path");
+
+// The Python pipeline sets its process title to this (setproctitle /
+// MAGIC_MIRROR_APP_TITLE in defines.py). We match on it to reap stale
+// instances that a previous, uncleanly-stopped MagicMirror left holding the
+// Hailo device.
+const HAILO_APP_PROCTITLE = "Hailo Magic Mirror App";
 
 module.exports = NodeHelper.create({
   start() {
@@ -21,11 +27,24 @@ module.exports = NodeHelper.create({
     this.routeMounted = false;
     this.hailoProcess = null;
     this.stopping = false;
-    // Safety net for teardown paths that bypass stop() (e.g. the host process
-    // exiting normally): reap the pipeline so it can't be orphaned and leave a
-    // stale preview window behind. Must be synchronous, so SIGKILL the group.
-    // (SIGKILL of the host process itself cannot be caught — nothing can.)
+    // Reap the detached pipeline on every teardown path so it can't be
+    // orphaned and keep holding the (single) Hailo device.
+    //
+    // The "exit" event covers a normal/graceful process exit, but it does NOT
+    // fire on SIGTERM/SIGINT/SIGHUP — their default action terminates the
+    // process without running exit handlers. That is exactly how the pipeline
+    // got orphaned: MagicMirror is almost always stopped with SIGTERM, so node
+    // died without ever reaping its detached child. Catch those signals too.
+    // (SIGKILL of the host process itself cannot be caught — nothing can; the
+    // pre-launch reap in launchHailoApp() is the safety net for that.)
     process.once("exit", () => this.killPipeline("SIGKILL"));
+    for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) {
+      process.once(sig, () => {
+        this.stopping = true;
+        this.killPipeline("SIGKILL");
+        process.exit(0);
+      });
+    }
     Log.info(`Starting node_helper for: ${this.name}`);
   },
 
@@ -165,6 +184,48 @@ module.exports = NodeHelper.create({
     if (this.hailoProcess) {
       return;
     }
+    // A pipeline launched detached (below) survives if MagicMirror is killed
+    // without a clean node_helper teardown (e.g. SIGKILL, crash, or a deploy
+    // that only stops Electron). The orphan keeps holding the single Hailo
+    // device, so the next launch dies with HAILO_OUT_OF_PHYSICAL_DEVICES.
+    // Reap any such stale instance before spawning a fresh one.
+    this.reapStalePipelines(() => this.spawnHailoApp());
+  },
+
+  // SIGTERM then (after a grace period) SIGKILL any process whose title matches
+  // the Hailo pipeline, then invoke `done`. Best-effort: pkill is absent on
+  // some systems, and "no matches" is the normal, healthy case.
+  reapStalePipelines(done) {
+    const needle = JSON.stringify(HAILO_APP_PROCTITLE); // shell-quote (has spaces)
+    exec(`pkill -TERM -f ${needle}`, (err) => {
+      // pkill exits 1 when nothing matched — that's the expected happy path.
+      if (!err) {
+        Log.warn(`${this.name}: reaped a stale Hailo pipeline (SIGTERM)`);
+      }
+      setTimeout(() => {
+        exec(`pkill -KILL -f ${needle}`, () => done());
+      }, 2000);
+    });
+  },
+
+  // Whether `setpriv --pdeathsig` is available (util-linux; present on Linux,
+  // absent on macOS). Memoized — the answer can't change at runtime.
+  hasSetpriv() {
+    if (this._hasSetpriv === undefined) {
+      try {
+        execSync("command -v setpriv", { stdio: "ignore" });
+        this._hasSetpriv = true;
+      } catch (_) {
+        this._hasSetpriv = false;
+      }
+    }
+    return this._hasSetpriv;
+  },
+
+  spawnHailoApp() {
+    if (this.hailoProcess) {
+      return;
+    }
     const appCfg = this.config.hailoApp || {};
     const command = appCfg.command || "python";
     const args = appCfg.args || [];
@@ -179,12 +240,28 @@ module.exports = NodeHelper.create({
     }
     Object.assign(env, appCfg.env || {});
 
+    // Tie the pipeline's lifetime to this host process at the kernel level:
+    // setpriv sets PR_SET_PDEATHSIG so the OS sends the pipeline SIGTERM the
+    // moment its parent (the MagicMirror/Electron process that owns this
+    // node_helper) dies — by ANY means. This is what actually prevents orphans:
+    // Electron swallows SIGTERM before our JS signal handlers run, and SIGKILL
+    // can't be caught at all, so an in-process handler is not enough. The
+    // setting is preserved across the wrapper's exec into the long-running
+    // python. Falls back to a plain spawn where setpriv is unavailable (the
+    // pre-launch reap above is the safety net then).
+    let spawnCmd = command;
+    let spawnArgs = args;
+    if (this.hasSetpriv()) {
+      spawnCmd = "setpriv";
+      spawnArgs = ["--pdeathsig", "TERM", command, ...args];
+    }
+
     Log.info(`${this.name}: launching Hailo pipeline: ${command} ${args.join(" ")} (cwd=${cwd})`);
 
     // detached:true puts the child in its own process group so we can later
     // signal the whole group (the bash wrapper, python, and any GStreamer
     // children) at once and never orphan the preview window.
-    const child = spawn(command, args, { cwd, env, detached: true });
+    const child = spawn(spawnCmd, spawnArgs, { cwd, env, detached: true });
     this.hailoProcess = child;
     this.sendSocketNotification("HAILO_STATUS", { status: "pipeline running" });
 
