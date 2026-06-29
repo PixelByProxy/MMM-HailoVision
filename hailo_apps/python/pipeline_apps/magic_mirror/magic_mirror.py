@@ -16,6 +16,7 @@ import hailo
 from hailo_apps.python.core.common.discord_handler import DiscordHandler
 from hailo_apps.python.core.common.buffer_utils import get_caps_from_pad, get_numpy_from_buffer_efficient
 from hailo_apps.python.core.common.hailo_logger import get_logger
+from hailo_apps.python.core.common.magic_mirror_handler import MagicMirrorHandler
 from hailo_apps.python.core.common.telegram_handler import TelegramHandler
 from hailo_apps.python.core.gstreamer.gstreamer_app import app_callback_class
 from hailo_apps.python.pipeline_apps.magic_mirror.magic_mirror_pipeline import GStreamerMagicMirrorApp
@@ -42,6 +43,10 @@ TELEGRAM_CHAT_ID = ''
 DISCORD_ENABLED = get_env_bool("HAILO_DISCORD_ENABLED", False)
 DISCORD_TOKEN = get_env_str("HAILO_DISCORD_TOKEN")
 DISCORD_CHANNEL_ID = get_env_str("HAILO_DISCORD_CHANNEL_ID")
+# MagicMirror² module integration (MMM-HailoMagicMirror REST API).
+MAGIC_MIRROR_ENABLED = get_env_bool("HAILO_MAGIC_MIRROR_ENABLED", False)
+MAGIC_MIRROR_API_URL = get_env_str("HAILO_MAGIC_MIRROR_API_URL")
+MAGIC_MIRROR_API_TOKEN = get_env_str("HAILO_MAGIC_MIRROR_API_TOKEN")
 GESTURE_HISTORY_LENGTH = 12
 GESTURE_MIN_DELTA_RATIO = 0.35
 GESTURE_MIN_DELTA_PIXELS = 80
@@ -74,6 +79,11 @@ class user_callbacks_class(app_callback_class):
         self.discord_token = DISCORD_TOKEN
         self.discord_channel_id = DISCORD_CHANNEL_ID
 
+        # MagicMirror settings as instance attributes
+        self.magic_mirror_enabled = MAGIC_MIRROR_ENABLED
+        self.magic_mirror_api_url = MAGIC_MIRROR_API_URL
+        self.magic_mirror_api_token = MAGIC_MIRROR_API_TOKEN
+
         # Initialize TelegramHandler if Telegram is enabled
         self.telegram_handler = None
         if self.telegram_enabled and self.telegram_token and self.telegram_chat_id:
@@ -83,6 +93,13 @@ class user_callbacks_class(app_callback_class):
         self.discord_handler = None
         if self.discord_enabled and self.discord_token and self.discord_channel_id:
             self.discord_handler = DiscordHandler(self.discord_token, self.discord_channel_id)
+
+        # Initialize MagicMirrorHandler if MagicMirror integration is enabled
+        self.magic_mirror_handler = None
+        if self.magic_mirror_enabled and self.magic_mirror_api_url:
+            self.magic_mirror_handler = MagicMirrorHandler(
+                self.magic_mirror_api_url, self.magic_mirror_api_token
+            )
 
     def send_notification(self, name, global_id, confidence, frame):
         """
@@ -103,15 +120,24 @@ class user_callbacks_class(app_callback_class):
             self.discord_handler.send_notification(name, global_id, confidence, frame)
     # endregion
 
+    def send_magic_mirror_action(self, action, face=None, confidence=None):
+        """Forward a recognized action/face to the MagicMirror module (if enabled)."""
+        if self.magic_mirror_enabled and self.magic_mirror_handler:
+            self.magic_mirror_handler.send_action(action=action, face=face, confidence=confidence)
+
     def update_current_person(self, person_label):
         """
         Reset gesture state when face recognition switches to a different person.
+
+        Returns True when the recognized person changed (a new face), so the
+        caller can forward a one-shot ``face_recognition`` action.
         """
         if person_label == self.current_person_label:
-            return
+            return False
         self.current_person_label = person_label
         self.gesture_tracks.clear()
         self.latest_gesture_frame.clear()
+        return True
 
     def update_gesture(self, track_id, wrist_name, x, y, bbox_width, bbox_height):
         """
@@ -200,11 +226,19 @@ def app_callback(element, buffer, user_data):
             if len(classifications) > 0:
                 for classification in classifications:
                     person_label = classification.get_label()
-                    user_data.update_current_person(person_label)
+                    person_changed = user_data.update_current_person(person_label)
                     if person_label == 'Unknown':
                         string_to_print += 'Unknown person detected'
                     else:
                         string_to_print += f'Person recognition: {person_label} (Confidence: {classification.get_confidence():.1f})'
+                    # Forward a one-shot face_recognition action to MagicMirror
+                    # whenever the recognized person changes.
+                    if person_changed:
+                        user_data.send_magic_mirror_action(
+                            action="face_recognition",
+                            face=person_label,
+                            confidence=classification.get_confidence(),
+                        )
                     if track_id > user_data.latest_track_id:
                         user_data.latest_track_id = track_id
                         print(string_to_print)
@@ -251,6 +285,13 @@ def app_callback(element, buffer, user_data):
                         confidence=confidence,
                         frame=frame,
                     )
+                # Forward the swipe gesture to MagicMirror, tagged with the
+                # currently recognized person so per-face actions can apply.
+                user_data.send_magic_mirror_action(
+                    action=gesture_name,
+                    face=user_data.current_person_label,
+                    confidence=confidence,
+                )
     return
 
 

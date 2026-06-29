@@ -77,12 +77,22 @@ git clone https://github.com/hailo-ai/hailo-apps.git
 # cd to the directory
 ./install.sh --all  # install all
 source setup_env.sh  # activate python virtual environment
-export DISPLAY=:0  # required only if working headless.
+export DISPLAY=:0  # only needed for the preview window; omit when using --headless
 # cd to app directory
 python magic_mirror.py --mode train  # first populate the DB from existing images
 python magic_mirror.py --input usb --mode run  # run from live camera
+python magic_mirror.py --input usb --mode run --headless  # run with no preview window (no display required)
 python magic_mirror.py --mode delete  # clear the DB
 ```
+
+### Running without a display (headless)
+
+By default the app opens a GStreamer preview window (`autovideosink`), which
+needs an X display (`export DISPLAY=:0`). Pass `--headless` to swap the preview
+for a `fakesink` so the pipeline runs with no display at all — useful over SSH,
+as a service, or when MagicMirror is the only screen you care about. Face
+recognition, gesture detection, and the action POSTs to MagicMirror all run
+unchanged; only the preview window is dropped.
 
 ## Usage
 
@@ -119,6 +129,33 @@ Please refer to the https://voxel51.com/fiftyone/ guide for more details about u
 
 - If these variables are not set, Discord notifications remain disabled by default.
 - Notifications are sent when a face is detected, with a text message and confidence score.
+
+---
+
+## MagicMirror² Integration
+
+The companion MagicMirror² module [`MMM-HailoMagicMirror`](../../../../MMM-HailoMagicMirror/)
+turns recognized events into MagicMirror actions. The pipeline POSTs every
+recognized `face_recognition`, `swipe_left`, and `swipe_right` event (with the
+recognized face) to the module's REST API; the module then runs whatever
+notification/command you configured for that `(action, face)` pair.
+
+Enable it with environment variables (the same pattern as Discord):
+
+```bash
+export HAILO_MAGIC_MIRROR_ENABLED=true
+export HAILO_MAGIC_MIRROR_API_URL="http://localhost:8080/MMM-HailoMagicMirror/action"
+export HAILO_MAGIC_MIRROR_API_TOKEN="optional-shared-secret"   # optional
+python magic_mirror.py
+```
+
+If `HAILO_MAGIC_MIRROR_ENABLED` is not set (or the URL is missing), the
+integration stays disabled and the pipeline behaves exactly as before.
+
+Alternatively, let the MagicMirror module launch this pipeline for you
+(`launchHailoApp: true`); it injects the variables above automatically so the
+mirror and the Hailo pipeline run as a single application. See the module's
+[README](../../../../MMM-HailoMagicMirror/README.md) for configuration details.
 
 ---
 

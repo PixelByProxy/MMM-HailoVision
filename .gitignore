@@ -58,6 +58,7 @@ resources
 .vscode/launch.json
 .cursor/
 .vscode/
+.claude/ralph-loop.local.md
 docs/superpowers/
 
 # App Data

@@ -71,7 +71,10 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         if parser is None:
             parser = get_pipeline_parser()
         parser.add_argument("--mode", default='run', help="The mode of the application: run, train, delete")
-        
+        parser.add_argument("--headless", action="store_true",
+                            help="Run without a preview window (uses fakesink instead of autovideosink). "
+                                 "Face/gesture detection still runs.")
+
         # Configure --hef-path for multi-model support (face detection + face recognition + pose)
         configure_multi_model_hef_path(parser)
         
@@ -80,6 +83,12 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         
         super().__init__(parser, user_data)
         setproctitle.setproctitle(MAGIC_MIRROR_APP_TITLE)
+
+        # Headless: drop the on-screen preview so the app can run without a
+        # display (e.g. over SSH or as a service). Detection/POST logic is
+        # unaffected; only the video sink changes.
+        if self.options_menu.headless:
+            self.video_sink = "fakesink"
 
         # Criteria for when a candidate frame is good enough to try recognize a person from it (e.g., skip the first few frames since in them person only entered the frame and usually is blurry)
         json_file_path = os.path.join(os.path.dirname(__file__), "face_recon_algo_params.json")
