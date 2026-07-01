@@ -78,9 +78,11 @@
           "python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --mode train && " +
           "exec python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --headless"
       ],
-      // Absolute path to the hailo-apps repo root. Required when this module is
-      // deployed into MagicMirror's modules/ dir (default cwd would otherwise be
-      // <MagicMirror>/modules); also where setup_env.sh and the script live.
+      // Working dir for the pipeline (where setup_env.sh and the script live).
+      // A relative path is resolved against this module's dir, so "hailo" points
+      // at the bundled backend (<module>/hailo) whether run from the repo or
+      // once deployed into <MagicMirror>/modules/MMM-HailoMagicMirror. An
+      // absolute path is also accepted and used as-is.
       cwd: "hailo",
       env: {},
       autoRestart: true,

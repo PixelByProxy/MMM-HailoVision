@@ -232,7 +232,13 @@ module.exports = NodeHelper.create({
     const appCfg = this.config.hailoApp || {};
     const command = appCfg.command || "python";
     const args = appCfg.args || [];
-    const cwd = appCfg.cwd || this.resolveRepoRoot();
+    // Resolve a relative hailoApp.cwd against THIS module's dir, not
+    // MagicMirror's process cwd (the MM root). Otherwise a relative "hailo"
+    // resolves to <MagicMirror>/hailo, which doesn't exist — the deployed
+    // backend lives at <MagicMirror>/modules/MMM-HailoMagicMirror/hailo. A
+    // non-existent cwd makes spawn() fail with a misleading "<cmd> ENOENT".
+    // Absolute paths pass through path.resolve unchanged.
+    const cwd = path.resolve(__dirname, appCfg.cwd || this.resolveRepoRoot());
 
     const env = Object.assign({}, process.env, {
       HAILO_MAGIC_MIRROR_ENABLED: "true",
