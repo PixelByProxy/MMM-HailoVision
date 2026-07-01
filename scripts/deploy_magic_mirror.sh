@@ -2,10 +2,12 @@
 # deploy_magic_mirror.sh — deploy the MMM-HailoMagicMirror module into a local
 # MagicMirror² install.
 #
-# Each run is idempotent and fully overwrites the previous deployment:
-#   1. Removes the existing MMM-HailoMagicMirror module folder in the install
-#      and replaces it with a fresh copy from this repo.
-#   2. Re-injects the module block from MMM-HailoMagicMirror/config.example.js
+# Each run refreshes the previous deployment:
+#   1. Copies the module files (this repo, honoring .gitignore) over the existing
+#      MMM-HailoMagicMirror module folder in the install, overwriting changed
+#      files and adding new ones. The folder is NOT deleted first, so any local
+#      files there (e.g. node_modules) are preserved.
+#   2. Re-injects the module block from config.example.js (at the repo root)
 #      into MagicMirror's config/config.js, replacing any block injected by a
 #      previous run (other modules in the config are left untouched).
 #   3. If MagicMirror is currently running, it is stopped and (when it was
@@ -41,7 +43,11 @@ for arg in "$@"; do
     esac
 done
 
-SRC_MODULE_DIR="$REPO_ROOT/MMM-HailoMagicMirror"
+# The whole repo IS the MagicMirror module (the module files live at the repo
+# root, with the hailo/ backend alongside them), so the repo is copied into
+# MagicMirror's modules/ dir — honoring .gitignore, so build artifacts, the
+# venv, the resources symlink, and .git/ are left out (see the copy step below).
+SRC_MODULE_DIR="$REPO_ROOT"
 DEST_MODULE_DIR="$MM_DIR/modules/MMM-HailoMagicMirror"
 CONFIG_FILE="$MM_DIR/config/config.js"
 EXAMPLE_CONFIG="$SRC_MODULE_DIR/config.example.js"
@@ -52,7 +58,7 @@ MARKER_NEEDLE_START='>>> MMM-HailoMagicMirror managed block'
 MARKER_NEEDLE_END='<<< MMM-HailoMagicMirror managed block'
 
 # --- Validate ---------------------------------------------------------------
-[[ -d "$SRC_MODULE_DIR" ]]   || { echo "❌ Source module not found: $SRC_MODULE_DIR" >&2; exit 1; }
+[[ -f "$SRC_MODULE_DIR/MMM-HailoMagicMirror.js" ]] || { echo "❌ Module entry not found: $SRC_MODULE_DIR/MMM-HailoMagicMirror.js" >&2; exit 1; }
 [[ -f "$EXAMPLE_CONFIG" ]]   || { echo "❌ Example config not found: $EXAMPLE_CONFIG" >&2; exit 1; }
 [[ -d "$MM_DIR" ]]          || { echo "❌ MagicMirror install not found: $MM_DIR" >&2; exit 1; }
 [[ -f "$CONFIG_FILE" ]]    || { echo "❌ MagicMirror config not found: $CONFIG_FILE" >&2; exit 1; }
@@ -138,12 +144,23 @@ if [[ "$STOP_ONLY" == "true" ]]; then
     exit 0
 fi
 
-# --- 1. Replace the module folder -------------------------------------------
-echo "🧹 Removing existing module: $DEST_MODULE_DIR"
-rm -rf "$DEST_MODULE_DIR"
-echo "📋 Copying fresh module from: $SRC_MODULE_DIR"
-mkdir -p "$MM_DIR/modules"
-cp -r "$SRC_MODULE_DIR" "$DEST_MODULE_DIR"
+# --- 1. Copy the module files (overlay onto existing dir) -------------------
+echo "📋 Copying repo (excluding gitignored files) into: $DEST_MODULE_DIR"
+mkdir -p "$DEST_MODULE_DIR"
+if git -C "$SRC_MODULE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # git ls-files -c -o --exclude-standard = tracked + untracked files, minus
+    # everything .gitignore (and .git/) excludes. -z / --null keeps unusual
+    # filenames safe. Piped through tar to recreate the tree under DEST.
+    # --ignore-failed-read: a tracked file that was deleted on disk but whose
+    # deletion isn't committed yet still shows up in ls-files; skip it (warn)
+    # instead of aborting the whole deploy under `set -o pipefail`.
+    git -C "$SRC_MODULE_DIR" ls-files -z --cached --others --exclude-standard \
+      | tar -C "$SRC_MODULE_DIR" --null -T - --ignore-failed-read -cf - \
+      | tar -C "$DEST_MODULE_DIR" -xf -
+else
+    echo "⚠️  Not a git repo; copying everything (including otherwise-ignored files)."
+    cp -a "$SRC_MODULE_DIR/." "$DEST_MODULE_DIR/"
+fi
 
 # --- 2. Re-inject the config block ------------------------------------------
 echo "⚙️  Updating config: $CONFIG_FILE"

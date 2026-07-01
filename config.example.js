@@ -81,7 +81,7 @@
       // Absolute path to the hailo-apps repo root. Required when this module is
       // deployed into MagicMirror's modules/ dir (default cwd would otherwise be
       // <MagicMirror>/modules); also where setup_env.sh and the script live.
-      cwd: "/home/pi/Documents/repos/hailo-apps-magic-mirror",
+      cwd: "hailo",
       env: {},
       autoRestart: true,
       restartDelayMs: 5000

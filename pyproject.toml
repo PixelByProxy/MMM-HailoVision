@@ -58,6 +58,8 @@ hailo-magic-mirror =        "hailo_apps.python.pipeline_apps.magic_mirror.magic_
 include-package-data = true
 
 [tool.setuptools.packages.find]
+# Package sources live under the hailo/ subdirectory.
+where = ["hailo"]
 include = ["hailo_apps*", "local_resources*"]
 
 [tool.setuptools.package-data]
@@ -78,12 +80,12 @@ line-length = 100
 exclude = [
     ".git", ".hg", ".mypy_cache", ".ruff_cache", ".venv", "venv", "build", "dist",
     "__pycache__", "site-packages",
-    "hailo_apps/**/resources/**",
-    "hailo_apps/**/cpp/**",
+    "hailo/hailo_apps/**/resources/**",
+    "hailo/hailo_apps/**/cpp/**",
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["hailo/tests"]
 addopts = "-ra --tb=short"
 markers = [
     "sanity: Quick environment sanity checks",

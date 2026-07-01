@@ -1,6 +1,6 @@
-# Include data files
-recursive-include resources *
-recursive-include local_resources *
+# Include data files (package sources live under hailo/)
+recursive-include hailo/resources *
+recursive-include hailo/local_resources *
 recursive-include scripts *.sh
 include README.md
 include requirements.txt

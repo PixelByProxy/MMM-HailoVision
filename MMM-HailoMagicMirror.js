@@ -47,23 +47,17 @@ Module.register("MMM-HailoMagicMirror", {
 
     // ---- Hailo pipeline launcher ----
     // When enabled, node_helper spawns the Python pipeline on startup.
-    launchHailoApp: false,
+    launchHailoApp: true,
     hailoApp: {
-      command: "python",
-      // Args are passed verbatim to the command.
+      command: "bash",
       args: [
-        "hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py",
-        "--input",
-        "usb"
+        "-c",
+        "source setup_env.sh && " +
+          "python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --mode train && " +
+          "exec python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --headless"
       ],
-      // Working directory the command is run from (defaults to the repo root,
-      // resolved by node_helper if left empty).
-      cwd: "",
-      // Extra environment variables merged into the child process env.
-      // node_helper automatically injects HAILO_MAGIC_MIRROR_ENABLED and
-      // HAILO_MAGIC_MIRROR_API_URL so the pipeline can reach this module.
+      cwd: "hailo",
       env: {},
-      // Restart the pipeline automatically if it exits.
       autoRestart: true,
       restartDelayMs: 5000
     },

@@ -168,7 +168,10 @@ module.exports = NodeHelper.create({
 
   // ---- Hailo pipeline launcher -----------------------------------------
   resolveRepoRoot() {
-    // node_helper lives at <repo>/MMM-HailoMagicMirror/node_helper.js
+    // Fallback default cwd only. Once deployed, node_helper lives at
+    // <MagicMirror>/modules/MMM-HailoMagicMirror/node_helper.js, so ".." is the
+    // modules/ dir — not the hailo backend. Always set an explicit hailoApp.cwd
+    // (see config.example.js) pointing at the repo's hailo/ dir.
     return path.resolve(__dirname, "..");
   },
 

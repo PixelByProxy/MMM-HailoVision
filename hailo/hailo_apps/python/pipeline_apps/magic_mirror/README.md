@@ -134,7 +134,7 @@ Please refer to the https://voxel51.com/fiftyone/ guide for more details about u
 
 ## MagicMirror² Integration
 
-The companion MagicMirror² module [`MMM-HailoMagicMirror`](../../../../MMM-HailoMagicMirror/)
+The companion MagicMirror² module [`MMM-HailoMagicMirror`](../../../../../README.md)
 turns recognized events into MagicMirror actions. The pipeline POSTs every
 recognized `face_recognition`, `swipe_left`, and `swipe_right` event (with the
 recognized face) to the module's REST API; the module then runs whatever
@@ -155,7 +155,7 @@ integration stays disabled and the pipeline behaves exactly as before.
 Alternatively, let the MagicMirror module launch this pipeline for you
 (`launchHailoApp: true`); it injects the variables above automatically so the
 mirror and the Hailo pipeline run as a single application. See the module's
-[README](../../../../MMM-HailoMagicMirror/README.md) for configuration details.
+[README](../../../../../README.md) for configuration details.
 
 ---
 

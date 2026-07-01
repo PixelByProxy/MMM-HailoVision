@@ -2,7 +2,10 @@
 
 A [MagicMirror²](https://magicmirror.builders/) module that bridges the Hailo
 **Magic Mirror** face-recognition / gesture pipeline (this repo's
-`hailo_apps/python/pipeline_apps/magic_mirror`) into MagicMirror.
+`hailo/hailo_apps/python/pipeline_apps/magic_mirror`) into MagicMirror.
+
+This repository root **is** the MagicMirror module; the Hailo pipeline backend it
+drives lives in the [`hailo/`](hailo/) subdirectory.
 
 It does three things:
 
@@ -21,14 +24,21 @@ Supported actions out of the box: `face_recognition`, `swipe_left`,
 
 ## Installation
 
+**Option A — deploy script (recommended).** Copies just the module files into
+your MagicMirror install and (re)injects the config block:
+
+```bash
+/home/pi/Documents/repos/hailo-apps-magic-mirror/scripts/deploy_magic_mirror.sh
+```
+
+**Option B — symlink.** This repo root is the module, so symlink it directly:
+
 ```bash
 cd ~/MagicMirror/modules
-ln -s /home/pi/Documents/repos/hailo-apps-magic-mirror/MMM-HailoMagicMirror .
+ln -s /home/pi/Documents/repos/hailo-apps-magic-mirror MMM-HailoMagicMirror
 cd MMM-HailoMagicMirror
 npm install        # installs express
 ```
-
-(You can also copy the directory instead of symlinking.)
 
 ## Configuration
 

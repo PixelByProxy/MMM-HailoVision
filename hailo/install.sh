@@ -24,6 +24,9 @@ set -uo pipefail
 #===============================================================================
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Repo root (one level up): where pyproject.toml / MANIFEST.in live and where
+# the editable-install egg-info is generated.
+readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 readonly SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 readonly TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 readonly CONFIG_FILE="${SCRIPT_DIR}/hailo_apps/config/config.yaml"
@@ -748,7 +751,7 @@ detect_user_and_group() {
 check_prerequisites() {
     log_step 2 "Prerequisites Check"
 
-    local check_script="${SCRIPT_DIR}/scripts/check_installed_packages.sh"
+    local check_script="${SCRIPT_DIR}/../scripts/check_installed_packages.sh"
 
     if [[ ! -f "$check_script" ]]; then
         log_error "Prerequisites check script not found: $check_script"
@@ -997,8 +1000,8 @@ setup_virtual_environment() {
     # Clean up build artifacts
     log_info "Cleaning up build artifacts..."
     disable_error_trap
-    run_as_user find "${SCRIPT_DIR}" -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true
-    run_as_user rm -rf "${SCRIPT_DIR}/build/" "${SCRIPT_DIR}/dist/" 2>/dev/null || true
+    run_as_user find "${REPO_ROOT}" -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true
+    run_as_user rm -rf "${REPO_ROOT}/build/" "${REPO_ROOT}/dist/" 2>/dev/null || true
     enable_error_trap
     log_debug "Build artifacts cleaned"
 
@@ -1110,7 +1113,7 @@ install_python_packages() {
 
     # Install the hailo_apps package in editable mode
     log_info "Installing hailo_apps package (editable mode)..."
-    if ! run_as_user bash -c "source '${venv_activate}' && pip install -e '${SCRIPT_DIR}'"; then
+    if ! run_as_user bash -c "source '${venv_activate}' && pip install -e '${REPO_ROOT}'"; then
         log_error "Failed to install hailo_apps package"
         log_info "Troubleshooting:"
         log_info "  • Check setup.py or pyproject.toml exists"
