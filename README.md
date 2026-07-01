@@ -1,81 +1,95 @@
-# Magic Mirror
+# MMM-HailoMagicMirror
 
-Real-time **face recognition** and **gesture detection** for Hailo accelerators, built on GStreamer.
+A [MagicMirror²](https://magicmirror.builders/) module that bridges the Hailo
+**Magic Mirror** face-recognition / gesture pipeline (this repo's
+`hailo_apps/python/pipeline_apps/magic_mirror`) into MagicMirror.
 
-This repository is a slimmed-down distribution of [Hailo-Apps](https://github.com/hailo-ai/hailo-apps) containing only the **Magic Mirror** application and the core framework it needs to run.
+It does three things:
 
-## Supported Platforms and Devices
-| Platforms | Accelerators |
-|---|---|
-| ![Raspberry Pi](https://img.shields.io/badge/Raspberry-Pi%205-red?logo=raspberrypi&logoColor=white) ![Ubuntu](https://img.shields.io/badge/Ubuntu-x86__64-E95420?logo=ubuntu&logoColor=white) | ![Hailo-8](https://img.shields.io/badge/Hailo-8-00A4EF?logoColor=white) ![Hailo-8L](https://img.shields.io/badge/Hailo-8L-00A4EF?logoColor=white) |
+1. **REST API** — exposes an HTTP endpoint on MagicMirror's web server. The
+   Hailo Python pipeline POSTs recognized events `{ action, face, confidence }`
+   to it (the same way the pipeline already talks to Discord/Telegram).
+2. **Configurable per-face actions** — for each `(action, face)` pair you decide
+   what happens: broadcast a MagicMirror notification (to control other modules)
+   and/or run a shell command on the host.
+3. **Pipeline launcher** — optionally spawns and supervises the Hailo Python
+   pipeline on MagicMirror startup, so the whole system runs as a single app.
 
-## What it does
+Supported actions out of the box: `face_recognition`, `swipe_left`,
+`swipe_right`. You can add any custom action key — it just has to match the
+`action` string the pipeline sends.
 
-Magic Mirror recognizes known people in a live video stream and detects basic
-gestures (`swipe_left`, `swipe_right`) using pose estimation. It runs three models
-on the Hailo device — face detection (SCRFD), face recognition (ArcFace), and pose
-estimation (YOLOv8-pose) — and stores face embeddings in a local [LanceDB](https://lancedb.github.io/)
-database. When a person (known or unknown) or a gesture is detected, an optional
-notification can be sent via Telegram or Discord.
+## Installation
 
-See the [application guide](hailo_apps/python/pipeline_apps/magic_mirror/README.md) for full details on training, the database API, the FiftyOne web interface, and tuning parameters.
+```bash
+cd ~/MagicMirror/modules
+ln -s /home/pi/Documents/repos/hailo-apps-magic-mirror/MMM-HailoMagicMirror .
+cd MMM-HailoMagicMirror
+npm install        # installs express
+```
 
-## Requirements
+(You can also copy the directory instead of symlinking.)
 
-Install these packages **before** running `install.sh`. Download them from the [Hailo Developer Zone](https://hailo.ai/developer-zone/).
+## Configuration
 
-| Package | Type | Required For |
+Add a module block to your MagicMirror `config/config.js`. See
+[config.example.js](config.example.js) for a complete, copy-paste example.
+
+| Option | Default | Description |
 |---|---|---|
-| HailoRT PCIe Driver | .deb | All apps |
-| HailoRT | .deb | All apps |
-| TAPPAS Core | .deb | GStreamer pipeline |
-| HailoRT Python Binding | .whl | Python app |
-| TAPPAS Core Python Binding | .whl | GStreamer pipeline |
+| `apiPath` | `MMM-HailoMagicMirror/action` | Path the REST endpoint is mounted on. |
+| `apiToken` | `""` | Optional shared secret. When set, requests must send it in the `X-Hailo-Token` header (or a `token` body field). |
+| `actions` | see below | `action → face → handler` map. |
+| `launchHailoApp` | `false` | Launch the Hailo Python pipeline on startup. |
+| `hailoApp` | see below | Launcher settings (`command`, `args`, `cwd`, `env`, `autoRestart`, `restartDelayMs`). |
+| `showStatus` | `true` | Show a small status line in the module region. |
 
-## Quick Start
+### The `actions` map
 
-### Install
-
-```bash
-git clone <this-repo-url>
-cd hailo-apps-magic-mirror
-sudo ./install.sh
-source setup_env.sh           # activate the Python virtual environment
-export DISPLAY=:0             # only needed when running headless
+```js
+actions: {
+  swipe_left:  { "*": { notification: "PAGE_INCREMENT" } },
+  swipe_right: { "*": { notification: "PAGE_DECREMENT" } },
+  face_recognition: {
+    Ryan:    { notification: "SHOW_ALERT", payload: { title: "Welcome Ryan" } },
+    "*":     { shell: "echo recognized $HAILO_FACE" }
+  }
+}
 ```
 
-> This build ships the prebuilt postprocess `.so` libraries, so installation skips
-> C++ compilation automatically.
+- The first key is the **action**.
+- The second key is the **face** (the recognized person label), or `"*"` to
+  match any face. An exact face match wins; otherwise `"*"` is used.
+- Each **handler** may define:
+  - `notification` (+ optional `payload`): a MagicMirror notification that is
+    broadcast via `sendNotification`, so other modules can react (e.g.
+    [MMM-pages](https://github.com/edward-shen/MMM-pages) listens for
+    `PAGE_INCREMENT` / `PAGE_DECREMENT`).
+  - `shell`: a host command. `$HAILO_ACTION` and `$HAILO_FACE` are available in
+    its environment.
 
-### Run
+## How it connects to the Python pipeline
 
-```bash
-hailo-magic-mirror --mode train          # populate the database from training images
-hailo-magic-mirror --input usb           # run face recognition + gestures from a USB camera
-hailo-magic-mirror --mode delete         # clear the database
+When `launchHailoApp` is `true`, the module injects these environment variables
+into the pipeline process so it knows where to POST:
+
+```
+HAILO_MAGIC_MIRROR_ENABLED=true
+HAILO_MAGIC_MIRROR_API_URL=http://localhost:8080/MMM-HailoMagicMirror/action
+HAILO_MAGIC_MIRROR_API_TOKEN=<apiToken, if set>
 ```
 
-Run `hailo-magic-mirror --help` for all options (input source, mirror flags, model
-overrides, logging, etc.). You can also run the app directly with
-`python hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py`.
+If you'd rather run the pipeline yourself, leave `launchHailoApp: false` and set
+those variables manually (see the magic_mirror app README).
 
-## Notifications (optional)
+## REST API
 
-Discord notifications are configured via environment variables:
+`POST /<apiPath>`
 
-```bash
-export HAILO_DISCORD_ENABLED=true
-export HAILO_DISCORD_TOKEN="YOUR_BOT_TOKEN"
-export HAILO_DISCORD_CHANNEL_ID="YOUR_CHANNEL_ID"
-hailo-magic-mirror --input usb
+```json
+{ "action": "swipe_left", "face": "Ryan", "confidence": 0.92 }
 ```
 
-Telegram is also supported (requires the `telebot` package). If no notification
-provider is configured, notifications are simply disabled. See the
-[application guide](hailo_apps/python/pipeline_apps/magic_mirror/README.md) for details.
-
-## Support
-
-💬 [Hailo Community Forum](https://community.hailo.ai/)
-
-**License:** MIT - see [LICENSE](LICENSE)
+Response: `{ "ok": true, "matched": true, "action": "...", "face": "..." }`.
+`matched` is `false` when no handler is configured for that pair (still HTTP
+200). A `GET` on the same path is a health check.
