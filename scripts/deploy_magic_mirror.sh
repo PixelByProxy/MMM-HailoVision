@@ -2,16 +2,14 @@
 # deploy_magic_mirror.sh — deploy the MMM-HailoVision module into a local
 # MagicMirror² install.
 #
-# Each run refreshes the previous deployment:
-#   1. Copies the module files (this repo, honoring .gitignore) over the existing
-#      MMM-HailoVision module folder in the install, overwriting changed
-#      files and adding new ones. The folder is NOT deleted first, so any local
-#      files there (e.g. node_modules) are preserved.
-#   2. Re-injects the module block from config.example.js (at the repo root)
+# This repo IS the MMM-HailoVision module, running directly from this
+# directory (no copy step needed). Each run refreshes the previous
+# deployment:
+#   1. Re-injects the module block from config.example.js (at the repo root)
 #      into MagicMirror's config/config.js, replacing any block injected by a
 #      previous run (other modules in the config are left untouched).
-#   3. If MagicMirror is currently running, it is stopped and (when it was
-#      running) restarted so it picks up the new module + config.
+#   2. If MagicMirror is currently running, it is stopped and (when it was
+#      running) restarted so it picks up the new config.
 #
 # Usage:
 #   scripts/deploy_magic_mirror.sh [MM_DIR]
@@ -30,7 +28,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 MM_DIR="${MM_DIR:-$HOME/Documents/repos/MagicMirror}"
-RESTART_MODE="auto"   # auto | always | never
+RESTART_MODE="always"   # auto | always | never
 STOP_ONLY="false"
 
 for arg in "$@"; do
@@ -44,11 +42,9 @@ for arg in "$@"; do
 done
 
 # The whole repo IS the MagicMirror module (the module files live at the repo
-# root, with the hailo/ backend alongside them), so the repo is copied into
-# MagicMirror's modules/ dir — honoring .gitignore, so build artifacts, the
-# venv, the resources symlink, and .git/ are left out (see the copy step below).
+# root, with the hailo/ backend alongside them) and runs directly from here,
+# so no copy into MagicMirror's modules/ dir is needed.
 SRC_MODULE_DIR="$REPO_ROOT"
-DEST_MODULE_DIR="$MM_DIR/modules/MMM-HailoVision"
 CONFIG_FILE="$MM_DIR/config/config.js"
 EXAMPLE_CONFIG="$SRC_MODULE_DIR/config.example.js"
 
@@ -144,25 +140,7 @@ if [[ "$STOP_ONLY" == "true" ]]; then
     exit 0
 fi
 
-# --- 1. Copy the module files (overlay onto existing dir) -------------------
-echo "📋 Copying repo (excluding gitignored files) into: $DEST_MODULE_DIR"
-mkdir -p "$DEST_MODULE_DIR"
-if git -C "$SRC_MODULE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    # git ls-files -c -o --exclude-standard = tracked + untracked files, minus
-    # everything .gitignore (and .git/) excludes. -z / --null keeps unusual
-    # filenames safe. Piped through tar to recreate the tree under DEST.
-    # --ignore-failed-read: a tracked file that was deleted on disk but whose
-    # deletion isn't committed yet still shows up in ls-files; skip it (warn)
-    # instead of aborting the whole deploy under `set -o pipefail`.
-    git -C "$SRC_MODULE_DIR" ls-files -z --cached --others --exclude-standard \
-      | tar -C "$SRC_MODULE_DIR" --null -T - --ignore-failed-read -cf - \
-      | tar -C "$DEST_MODULE_DIR" -xf -
-else
-    echo "⚠️  Not a git repo; copying everything (including otherwise-ignored files)."
-    cp -a "$SRC_MODULE_DIR/." "$DEST_MODULE_DIR/"
-fi
-
-# --- 2. Re-inject the config block ------------------------------------------
+# --- 1. Re-inject the config block ------------------------------------------
 echo "⚙️  Updating config: $CONFIG_FILE"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -215,7 +193,7 @@ cp "$CONFIG_FILE" "$CONFIG_FILE.deploy.bak"
 cp "$NEWCONF" "$CONFIG_FILE"
 echo "💾 Backed up previous config to: $CONFIG_FILE.deploy.bak"
 
-# --- 3. (Re)start MagicMirror -----------------------------------------------
+# --- 2. (Re)start MagicMirror -----------------------------------------------
 case "$RESTART_MODE" in
     never)
         echo "⏭️  Skipping restart (--no-restart)."

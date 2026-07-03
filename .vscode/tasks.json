@@ -1,0 +1,32 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "MMM-HailoVision - Setup",
+            "type": "shell",
+            "command": "./setup.sh",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "MMM-HailoVision - Start",
+            "type": "shell",
+            "command": "./scripts/deploy_magic_mirror.sh",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "MMM-HailoVision - Stop",
+            "type": "shell",
+            "command": "./scripts/deploy_magic_mirror.sh --stop",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

@@ -57,9 +57,12 @@ resources
 # IDE configuration files (user-specific)
 .vscode/launch.json
 .cursor/
-.vscode/
 .claude/ralph-loop.local.md
 docs/superpowers/
+
+# VS Code configuration
+.vscode/*
+!.vscode/tasks.json
 
 # App Data
 hailo/hailo_apps/python/pipeline_apps/face_recognition/database/
