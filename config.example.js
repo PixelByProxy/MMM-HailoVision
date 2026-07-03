@@ -1,4 +1,4 @@
-/* Example MagicMirror² config entry for MMM-HailoMagicMirror.
+/* Example MagicMirror² config entry for MMM-HailoVision.
  *
  * Copy the module block below into the `modules` array of your
  * MagicMirror `config/config.js`.
@@ -8,12 +8,12 @@
  * modules) and/or run a shell command on the host.
  */
 {
-  module: "MMM-HailoMagicMirror",
+  module: "MMM-HailoVision",
   position: "bottom_left",
   config: {
     // REST endpoint the Hailo Python pipeline POSTs to. Reachable at
-    //   http://<mirror-host>:<mm-port>/MMM-HailoMagicMirror/action
-    apiPath: "MMM-HailoMagicMirror/action",
+    //   http://<mirror-host>:<mm-port>/MMM-HailoVision/action
+    apiPath: "MMM-HailoVision/action",
     // Optional shared secret (also set HAILO_MAGIC_MIRROR_API_TOKEN on the
     // Python side, which the launcher injects automatically).
     apiToken: "",
@@ -81,7 +81,7 @@
       // Working dir for the pipeline (where setup_env.sh and the script live).
       // A relative path is resolved against this module's dir, so "hailo" points
       // at the bundled backend (<module>/hailo) whether run from the repo or
-      // once deployed into <MagicMirror>/modules/MMM-HailoMagicMirror. An
+      // once deployed into <MagicMirror>/modules/MMM-HailoVision. An
       // absolute path is also accepted and used as-is.
       cwd: "hailo",
       env: {},

@@ -43,7 +43,7 @@ TELEGRAM_CHAT_ID = ''
 DISCORD_ENABLED = get_env_bool("HAILO_DISCORD_ENABLED", False)
 DISCORD_TOKEN = get_env_str("HAILO_DISCORD_TOKEN")
 DISCORD_CHANNEL_ID = get_env_str("HAILO_DISCORD_CHANNEL_ID")
-# MagicMirror² module integration (MMM-HailoMagicMirror REST API).
+# MagicMirror² module integration (MMM-HailoVision REST API).
 MAGIC_MIRROR_ENABLED = get_env_bool("HAILO_MAGIC_MIRROR_ENABLED", False)
 MAGIC_MIRROR_API_URL = get_env_str("HAILO_MAGIC_MIRROR_API_URL")
 MAGIC_MIRROR_API_TOKEN = get_env_str("HAILO_MAGIC_MIRROR_API_TOKEN")

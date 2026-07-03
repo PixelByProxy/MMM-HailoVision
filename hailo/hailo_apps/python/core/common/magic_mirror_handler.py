@@ -12,7 +12,7 @@ hailo_logger = get_logger(__name__)
 
 
 class MagicMirrorHandler:
-    """Send recognized actions to the MMM-HailoMagicMirror MagicMirror² module.
+    """Send recognized actions to the MMM-HailoVision MagicMirror² module.
 
     The MagicMirror module exposes a REST endpoint. For every recognized
     action (``face_recognition``, ``swipe_left``, ``swipe_right``, ...) the

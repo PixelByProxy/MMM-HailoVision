@@ -1,5 +1,5 @@
 /* MagicMirror²
- * Module: MMM-HailoMagicMirror
+ * Module: MMM-HailoVision
  *
  * Bridges the Hailo "Magic Mirror" face-recognition / gesture pipeline into
  * MagicMirror². The Python pipeline POSTs recognized actions (face_recognition,
@@ -11,13 +11,13 @@
  * The node_helper can also launch the Hailo Python pipeline on startup so the
  * whole system runs as a single MagicMirror application.
  */
-Module.register("MMM-HailoMagicMirror", {
+Module.register("MMM-HailoVision", {
   // Default module configuration.
   defaults: {
     // ---- REST API ----
     // Path the REST endpoint is mounted on. The full URL the Python pipeline
     // must POST to is:  http://<mirror-host>:<mm-port>/<apiPath>
-    apiPath: "MMM-HailoMagicMirror/action",
+    apiPath: "MMM-HailoVision/action",
     // Optional shared secret. If set, incoming requests must send the same
     // value in the "X-Hailo-Token" header (or a "token" body field).
     apiToken: "",
@@ -76,7 +76,7 @@ Module.register("MMM-HailoMagicMirror", {
   },
 
   getStyles() {
-    return ["MMM-HailoMagicMirror.css"];
+    return ["MMM-HailoVision.css"];
   },
 
   // Notifications coming back from node_helper.

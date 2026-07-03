@@ -1,5 +1,5 @@
 /* MagicMirror²
- * Node Helper: MMM-HailoMagicMirror
+ * Node Helper: MMM-HailoVision
  *
  * Responsibilities:
  *   1. Mount a REST endpoint on MagicMirror's shared Express app. The Hailo
@@ -69,7 +69,7 @@ module.exports = NodeHelper.create({
     if (this.routeMounted) {
       return;
     }
-    const apiPath = "/" + String(this.config.apiPath || "MMM-HailoMagicMirror/action").replace(/^\/+/, "");
+    const apiPath = "/" + String(this.config.apiPath || "MMM-HailoVision/action").replace(/^\/+/, "");
 
     // MagicMirror exposes a shared Express instance as this.expressApp.
     // body-parser/express.json is already registered by MagicMirror core, but
@@ -169,7 +169,7 @@ module.exports = NodeHelper.create({
   // ---- Hailo pipeline launcher -----------------------------------------
   resolveRepoRoot() {
     // Fallback default cwd only. Once deployed, node_helper lives at
-    // <MagicMirror>/modules/MMM-HailoMagicMirror/node_helper.js, so ".." is the
+    // <MagicMirror>/modules/MMM-HailoVision/node_helper.js, so ".." is the
     // modules/ dir — not the hailo backend. Always set an explicit hailoApp.cwd
     // (see config.example.js) pointing at the repo's hailo/ dir.
     return path.resolve(__dirname, "..");
@@ -178,7 +178,7 @@ module.exports = NodeHelper.create({
   buildApiUrl() {
     // The Python pipeline POSTs back to this module. MagicMirror serves on
     // address/port from its own config; default to localhost:8080.
-    const apiPath = String(this.config.apiPath || "MMM-HailoMagicMirror/action").replace(/^\/+/, "");
+    const apiPath = String(this.config.apiPath || "MMM-HailoVision/action").replace(/^\/+/, "");
     const port = process.env.MM_PORT || 8080;
     return `http://localhost:${port}/${apiPath}`;
   },
@@ -235,7 +235,7 @@ module.exports = NodeHelper.create({
     // Resolve a relative hailoApp.cwd against THIS module's dir, not
     // MagicMirror's process cwd (the MM root). Otherwise a relative "hailo"
     // resolves to <MagicMirror>/hailo, which doesn't exist — the deployed
-    // backend lives at <MagicMirror>/modules/MMM-HailoMagicMirror/hailo. A
+    // backend lives at <MagicMirror>/modules/MMM-HailoVision/hailo. A
     // non-existent cwd makes spawn() fail with a misleading "<cmd> ENOENT".
     // Absolute paths pass through path.resolve unchanged.
     const cwd = path.resolve(__dirname, appCfg.cwd || this.resolveRepoRoot());

@@ -1,4 +1,4 @@
-# MMM-HailoMagicMirror
+# MMM-HailoVision
 
 A [MagicMirror²](https://magicmirror.builders/) module that bridges the Hailo
 **Magic Mirror** face-recognition / gesture pipeline (this repo's
@@ -35,8 +35,8 @@ your MagicMirror install and (re)injects the config block:
 
 ```bash
 cd ~/MagicMirror/modules
-ln -s /home/pi/Documents/repos/hailo-apps-magic-mirror MMM-HailoMagicMirror
-cd MMM-HailoMagicMirror
+ln -s /home/pi/Documents/repos/hailo-apps-magic-mirror MMM-HailoVision
+cd MMM-HailoVision
 npm install        # installs express
 ```
 
@@ -47,7 +47,7 @@ Add a module block to your MagicMirror `config/config.js`. See
 
 | Option | Default | Description |
 |---|---|---|
-| `apiPath` | `MMM-HailoMagicMirror/action` | Path the REST endpoint is mounted on. |
+| `apiPath` | `MMM-HailoVision/action` | Path the REST endpoint is mounted on. |
 | `apiToken` | `""` | Optional shared secret. When set, requests must send it in the `X-Hailo-Token` header (or a `token` body field). |
 | `actions` | see below | `action → face → handler` map. |
 | `launchHailoApp` | `false` | Launch the Hailo Python pipeline on startup. |
@@ -85,7 +85,7 @@ into the pipeline process so it knows where to POST:
 
 ```
 HAILO_MAGIC_MIRROR_ENABLED=true
-HAILO_MAGIC_MIRROR_API_URL=http://localhost:8080/MMM-HailoMagicMirror/action
+HAILO_MAGIC_MIRROR_API_URL=http://localhost:8080/MMM-HailoVision/action
 HAILO_MAGIC_MIRROR_API_TOKEN=<apiToken, if set>
 ```
 

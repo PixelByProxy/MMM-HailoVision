@@ -2,7 +2,7 @@
   "name": "mmm-hailomagicmirror",
   "version": "0.1.0",
   "description": "MagicMirror² module that bridges the Hailo Magic Mirror face-recognition / gesture pipeline into MagicMirror via a REST API, with configurable per-face actions and an optional Hailo pipeline launcher.",
-  "main": "MMM-HailoMagicMirror.js",
+  "main": "MMM-HailoVision.js",
   "keywords": [
     "MagicMirror",
     "hailo",
