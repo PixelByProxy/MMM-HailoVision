@@ -56,38 +56,9 @@
     },
 
     // Launch the Hailo Python pipeline on MagicMirror startup so everything
-    // runs as a single application.
+    // runs as a single application. The launch command itself is fixed inside
+    // the module (node_helper.js) and is not configurable.
     launchHailoApp: true,
-    hailoApp: {
-      // Launch through bash so setup_env.sh runs first: it activates the
-      // venv_hailo_apps virtualenv (which has setproctitle, GStreamer bindings,
-      // etc.), prepends the repo to PYTHONPATH, and loads Hailo env vars from
-      // /usr/local/hailo/resources/.env. Plain "python" has none of that.
-      // No --input => bundled test video. For a USB webcam append "--input usb".
-      // The pipeline must run once in "--mode train" to populate the face vector
-      // DB from existing images, THEN start the headless run. Both are chained
-      // in one command: train runs to completion, and on success `exec` replaces
-      // the shell with the long-running headless pipeline (so node_helper still
-      // supervises a single process). --headless drops the OpenCV/GStreamer
-      // preview window so the pipeline runs without a display (recommended here;
-      // MagicMirror is the display).
-      command: "bash",
-      args: [
-        "-c",
-        "source setup_env.sh && " +
-          "python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --mode train && " +
-          "exec python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --headless"
-      ],
-      // Working dir for the pipeline (where setup_env.sh and the script live).
-      // A relative path is resolved against this module's dir, so "hailo" points
-      // at the bundled backend (<module>/hailo) whether run from the repo or
-      // once deployed into <MagicMirror>/modules/MMM-HailoVision. An
-      // absolute path is also accepted and used as-is.
-      cwd: "hailo",
-      env: {},
-      autoRestart: true,
-      restartDelayMs: 5000
-    },
 
     showStatus: true
   }

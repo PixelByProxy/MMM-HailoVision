@@ -50,8 +50,7 @@ Add a module block to your MagicMirror `config/config.js`. See
 | `apiPath` | `MMM-HailoVision/action` | Path the REST endpoint is mounted on. |
 | `apiToken` | `""` | Optional shared secret. When set, requests must send it in the `X-Hailo-Token` header (or a `token` body field). |
 | `actions` | see below | `action → face → handler` map. |
-| `launchHailoApp` | `false` | Launch the Hailo Python pipeline on startup. |
-| `hailoApp` | see below | Launcher settings (`command`, `args`, `cwd`, `env`, `autoRestart`, `restartDelayMs`). |
+| `launchHailoApp` | `true` | Launch the Hailo Python pipeline on startup. |
 | `showStatus` | `true` | Show a small status line in the module region. |
 
 ### The `actions` map
@@ -61,7 +60,7 @@ actions: {
   swipe_left:  { "*": { notification: "PAGE_INCREMENT" } },
   swipe_right: { "*": { notification: "PAGE_DECREMENT" } },
   face_recognition: {
-    Ryan:    { notification: "SHOW_ALERT", payload: { title: "Welcome Ryan" } },
+    Anna:    { notification: "SHOW_ALERT", payload: { title: "Welcome Anna!" } },
     "*":     { shell: "echo recognized $HAILO_FACE" }
   }
 }

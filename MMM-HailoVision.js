@@ -46,21 +46,10 @@ Module.register("MMM-HailoVision", {
     },
 
     // ---- Hailo pipeline launcher ----
-    // When enabled, node_helper spawns the Python pipeline on startup.
+    // When enabled, node_helper spawns the Python pipeline on startup. The
+    // launch command itself is fixed inside node_helper and is not
+    // configurable.
     launchHailoApp: true,
-    hailoApp: {
-      command: "bash",
-      args: [
-        "-c",
-        "source setup_env.sh && " +
-          "python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --mode train && " +
-          "exec python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --headless"
-      ],
-      cwd: "hailo",
-      env: {},
-      autoRestart: true,
-      restartDelayMs: 5000
-    },
 
     // Show a small status line in the module region.
     showStatus: true

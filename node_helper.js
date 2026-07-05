@@ -21,6 +21,27 @@ const path = require("path");
 // Hailo device.
 const HAILO_APP_PROCTITLE = "Hailo Magic Mirror App";
 
+// Launch through bash so setup_env.sh runs first: it activates the
+// venv_hailo_apps virtualenv (setproctitle, GStreamer bindings, etc.),
+// prepends the repo to PYTHONPATH, and loads Hailo env vars from
+// /usr/local/hailo/resources/.env. The pipeline must run once in
+// "--mode train" to populate the face vector DB from existing images, THEN
+// start the headless run. Both are chained in one command: train runs to
+// completion, and on success `exec` replaces the shell with the long-running
+// headless pipeline (so node_helper still supervises a single process).
+const HAILO_APP = {
+  command: "bash",
+  args: [
+    "-c",
+    "source setup_env.sh && " +
+      "python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --mode train && " +
+      "exec python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --headless"
+  ],
+  cwd: "hailo",
+  autoRestart: true,
+  restartDelayMs: 5000
+};
+
 module.exports = NodeHelper.create({
   start() {
     this.config = null;
@@ -167,14 +188,6 @@ module.exports = NodeHelper.create({
   },
 
   // ---- Hailo pipeline launcher -----------------------------------------
-  resolveRepoRoot() {
-    // Fallback default cwd only. Once deployed, node_helper lives at
-    // <MagicMirror>/modules/MMM-HailoVision/node_helper.js, so ".." is the
-    // modules/ dir — not the hailo backend. Always set an explicit hailoApp.cwd
-    // (see config.example.js) pointing at the repo's hailo/ dir.
-    return path.resolve(__dirname, "..");
-  },
-
   buildApiUrl() {
     // The Python pipeline POSTs back to this module. MagicMirror serves on
     // address/port from its own config; default to localhost:8080.
@@ -229,16 +242,14 @@ module.exports = NodeHelper.create({
     if (this.hailoProcess) {
       return;
     }
-    const appCfg = this.config.hailoApp || {};
-    const command = appCfg.command || "python";
-    const args = appCfg.args || [];
-    // Resolve a relative hailoApp.cwd against THIS module's dir, not
-    // MagicMirror's process cwd (the MM root). Otherwise a relative "hailo"
-    // resolves to <MagicMirror>/hailo, which doesn't exist — the deployed
-    // backend lives at <MagicMirror>/modules/MMM-HailoVision/hailo. A
-    // non-existent cwd makes spawn() fail with a misleading "<cmd> ENOENT".
-    // Absolute paths pass through path.resolve unchanged.
-    const cwd = path.resolve(__dirname, appCfg.cwd || this.resolveRepoRoot());
+    const command = HAILO_APP.command;
+    const args = HAILO_APP.args;
+    // Resolve the cwd against THIS module's dir, not MagicMirror's process cwd
+    // (the MM root). Otherwise "hailo" resolves to <MagicMirror>/hailo, which
+    // doesn't exist — the deployed backend lives at
+    // <MagicMirror>/modules/MMM-HailoVision/hailo. A non-existent cwd makes
+    // spawn() fail with a misleading "<cmd> ENOENT".
+    const cwd = path.resolve(__dirname, HAILO_APP.cwd);
 
     const env = Object.assign({}, process.env, {
       HAILO_MAGIC_MIRROR_ENABLED: "true",
@@ -247,7 +258,6 @@ module.exports = NodeHelper.create({
     if (this.config.apiToken) {
       env.HAILO_MAGIC_MIRROR_API_TOKEN = this.config.apiToken;
     }
-    Object.assign(env, appCfg.env || {});
 
     // Tie the pipeline's lifetime to this host process at the kernel level:
     // setpriv sets PR_SET_PDEATHSIG so the OS sends the pipeline SIGTERM the
@@ -281,8 +291,8 @@ module.exports = NodeHelper.create({
       Log.warn(`${this.name}: Hailo pipeline exited (code=${code} signal=${signal})`);
       this.hailoProcess = null;
       this.sendSocketNotification("HAILO_STATUS", { status: "pipeline stopped" });
-      if (!this.stopping && appCfg.autoRestart) {
-        const delay = appCfg.restartDelayMs || 5000;
+      if (!this.stopping && HAILO_APP.autoRestart) {
+        const delay = HAILO_APP.restartDelayMs;
         Log.info(`${this.name}: restarting Hailo pipeline in ${delay}ms`);
         setTimeout(() => this.launchHailoApp(), delay);
       }
