@@ -55,10 +55,12 @@
       }
     },
 
-    // Launch the Hailo Python pipeline on MagicMirror startup so everything
-    // runs as a single application. The launch command itself is fixed inside
-    // the module (node_helper.js) and is not configurable.
     launchHailoApp: true,
+
+    // Camera source for the pipeline: "usb" (USB webcam, auto-detected) or
+    // "rpi" (Raspberry Pi camera). Leave empty/undefined to omit --input, in
+    // which case the pipeline uses its bundled test video.
+    cameraInputMode: "",
 
     showStatus: true
   }

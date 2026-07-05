@@ -21,26 +21,13 @@ const path = require("path");
 // Hailo device.
 const HAILO_APP_PROCTITLE = "Hailo Magic Mirror App";
 
-// Launch through bash so setup_env.sh runs first: it activates the
-// venv_hailo_apps virtualenv (setproctitle, GStreamer bindings, etc.),
-// prepends the repo to PYTHONPATH, and loads Hailo env vars from
-// /usr/local/hailo/resources/.env. The pipeline must run once in
-// "--mode train" to populate the face vector DB from existing images, THEN
-// start the headless run. Both are chained in one command: train runs to
-// completion, and on success `exec` replaces the shell with the long-running
-// headless pipeline (so node_helper still supervises a single process).
-const HAILO_APP = {
-  command: "bash",
-  args: [
-    "-c",
-    "source setup_env.sh && " +
-      "python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --mode train && " +
-      "exec python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --headless"
-  ],
-  cwd: "hailo",
-  autoRestart: true,
-  restartDelayMs: 5000
-};
+// How long to wait before relaunching the pipeline after it exits.
+const HAILO_RESTART_DELAY_MS = 5000;
+
+// Allowed values for the config's `cameraInputMode`. Only whitelisted values
+// are ever interpolated into the launch command (it runs through bash), so
+// config can select the camera source but not inject arbitrary arguments.
+const CAMERA_INPUT_MODES = ["usb", "rpi"];
 
 module.exports = NodeHelper.create({
   start() {
@@ -238,18 +225,52 @@ module.exports = NodeHelper.create({
     return this._hasSetpriv;
   },
 
+  // Assemble the bash arguments for the pipeline launch.
+  //
+  // The pipeline runs through bash so setup_env.sh runs first: it activates
+  // the venv_hailo_apps virtualenv (setproctitle, GStreamer bindings, etc.),
+  // prepends the repo to PYTHONPATH, and loads Hailo env vars from
+  // /usr/local/hailo/resources/.env. The pipeline must run once in
+  // "--mode train" to populate the face vector DB from existing images, THEN
+  // start the headless run. Both are chained in one command: train runs to
+  // completion, and on success `exec` replaces the shell with the long-running
+  // headless pipeline (so node_helper still supervises a single process).
+  //
+  // The only user-configurable piece is `cameraInputMode` ("usb" | "rpi" |
+  // unset), which selects the camera via --input on the headless run. Unset
+  // (or any non-whitelisted value) omits --input, so the pipeline falls back
+  // to its bundled test video.
+  buildHailoArgs() {
+    let input = "";
+    const mode = this.config.cameraInputMode;
+    if (mode) {
+      if (CAMERA_INPUT_MODES.includes(mode)) {
+        input = ` --input ${mode}`;
+      } else {
+        Log.warn(
+          `${this.name}: ignoring invalid cameraInputMode '${mode}' (allowed: ${CAMERA_INPUT_MODES.join(", ")})`
+        );
+      }
+    }
+    return [
+      "-c",
+      "source setup_env.sh && " +
+        "python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --mode train && " +
+        `exec python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --headless${input}`
+    ];
+  },
+
   spawnHailoApp() {
     if (this.hailoProcess) {
       return;
     }
-    const command = HAILO_APP.command;
-    const args = HAILO_APP.args;
-    // Resolve the cwd against THIS module's dir, not MagicMirror's process cwd
-    // (the MM root). Otherwise "hailo" resolves to <MagicMirror>/hailo, which
-    // doesn't exist — the deployed backend lives at
-    // <MagicMirror>/modules/MMM-HailoVision/hailo. A non-existent cwd makes
-    // spawn() fail with a misleading "<cmd> ENOENT".
-    const cwd = path.resolve(__dirname, HAILO_APP.cwd);
+    const command = "bash";
+    const args = this.buildHailoArgs();
+    // The bundled backend (where setup_env.sh and the script live) is at
+    // <module>/hailo. Resolve it against THIS module's dir, not MagicMirror's
+    // process cwd (the MM root) — a non-existent cwd makes spawn() fail with a
+    // misleading "<cmd> ENOENT".
+    const cwd = path.resolve(__dirname, "hailo");
 
     const env = Object.assign({}, process.env, {
       HAILO_MAGIC_MIRROR_ENABLED: "true",
@@ -291,10 +312,9 @@ module.exports = NodeHelper.create({
       Log.warn(`${this.name}: Hailo pipeline exited (code=${code} signal=${signal})`);
       this.hailoProcess = null;
       this.sendSocketNotification("HAILO_STATUS", { status: "pipeline stopped" });
-      if (!this.stopping && HAILO_APP.autoRestart) {
-        const delay = HAILO_APP.restartDelayMs;
-        Log.info(`${this.name}: restarting Hailo pipeline in ${delay}ms`);
-        setTimeout(() => this.launchHailoApp(), delay);
+      if (!this.stopping) {
+        Log.info(`${this.name}: restarting Hailo pipeline in ${HAILO_RESTART_DELAY_MS}ms`);
+        setTimeout(() => this.launchHailoApp(), HAILO_RESTART_DELAY_MS);
       }
     });
 

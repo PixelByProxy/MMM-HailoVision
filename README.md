@@ -51,6 +51,7 @@ Add a module block to your MagicMirror `config/config.js`. See
 | `apiToken` | `""` | Optional shared secret. When set, requests must send it in the `X-Hailo-Token` header (or a `token` body field). |
 | `actions` | see below | `action → face → handler` map. |
 | `launchHailoApp` | `true` | Launch the Hailo Python pipeline on startup. |
+| `cameraInputMode` | `""` | Camera source for the pipeline: `"usb"` (USB webcam, auto-detected) or `"rpi"` (Raspberry Pi camera). Empty/undefined omits `--input`, so the pipeline uses its bundled test video. |
 | `showStatus` | `true` | Show a small status line in the module region. |
 
 ### The `actions` map

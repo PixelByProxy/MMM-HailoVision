@@ -50,6 +50,10 @@ Module.register("MMM-HailoVision", {
     // launch command itself is fixed inside node_helper and is not
     // configurable.
     launchHailoApp: true,
+    // Camera source for the pipeline: "usb" (USB webcam, auto-detected) or
+    // "rpi" (Raspberry Pi camera). Leave empty/undefined to omit --input, in
+    // which case the pipeline uses its bundled test video.
+    cameraInputMode: "",
 
     // Show a small status line in the module region.
     showStatus: true
