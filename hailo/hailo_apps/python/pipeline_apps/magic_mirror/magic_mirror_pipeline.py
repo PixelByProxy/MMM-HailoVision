@@ -191,13 +191,6 @@ class GStreamerMagicMirrorApp(GStreamerApp):
                 if task['type'] == 'save_image':
                     frame, image_path = task['frame'], task['image_path']
                     self.save_image_file(frame, image_path)
-                elif task['type'] == 'send_notification':
-                    user_data.send_notification(
-                        name=task['name'],
-                        global_id=task['global_id'],
-                        confidence=task['confidence'],
-                        frame=task['frame']
-                    )
                 self.task_queue.task_done()
 
         # Start worker threads
@@ -398,8 +391,7 @@ class GStreamerMagicMirrorApp(GStreamerApp):
                 self.track_id_frame_count[track_id] = self.track_id_frame_count.get(track_id, 0) + 1
                 continue
             
-            # after self.skip_frames  
-            frame = get_numpy_from_buffer_efficient(buffer, format, width, height)
+            # after self.skip_frames
             embedding = detection.get_objects_typed(hailo.HAILO_MATRIX)  # face recognition embedding
             if len(embedding) == 0:
                 continue  # if cropper pipeline element decided to pass the detection - it will arrive to this stage of the pipeline without face embedding
@@ -421,12 +413,7 @@ class GStreamerMagicMirrorApp(GStreamerApp):
                 self.tracker.add_object_to_track(tracker_name, track_id, new_classification)
             
             # anyway re-process for "double-check" after self.skip_frames X 3
-            self.track_id_frame_count[track_id] = -3 * self.skip_frames  
-            if (
-                self.user_data.telegram_enabled
-                or self.user_data.discord_enabled
-            ):  # adding task to the worker queue
-                self.add_task('send_notification', name=person['label'], global_id=track_id, confidence=new_confidence, frame=frame)
+            self.track_id_frame_count[track_id] = -3 * self.skip_frames
 
         return Gst.PadProbeReturn.OK
     

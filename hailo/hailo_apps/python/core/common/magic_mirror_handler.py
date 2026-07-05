@@ -20,8 +20,8 @@ class MagicMirrorHandler:
     module runs whatever command/notification was configured for that
     (action, face) pair.
 
-    This mirrors the ``DiscordHandler`` pattern: construct it from environment
-    configuration and call :meth:`send_action` from the pipeline callback.
+    Construct it from environment configuration and call :meth:`send_action`
+    from the pipeline callback.
     """
 
     def __init__(self, api_url, api_token=""):

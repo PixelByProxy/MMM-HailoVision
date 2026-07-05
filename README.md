@@ -11,7 +11,7 @@ It does three things:
 
 1. **REST API** — exposes an HTTP endpoint on MagicMirror's web server. The
    Hailo Python pipeline POSTs recognized events `{ action, face, confidence }`
-   to it (the same way the pipeline already talks to Discord/Telegram).
+   to it.
 2. **Configurable per-face actions** — for each `(action, face)` pair you decide
    what happens: broadcast a MagicMirror notification (to control other modules)
    and/or run a shell command on the host.

@@ -13,11 +13,9 @@ from gi.repository import Gst
 
 # Local application-specific imports
 import hailo
-from hailo_apps.python.core.common.discord_handler import DiscordHandler
-from hailo_apps.python.core.common.buffer_utils import get_caps_from_pad, get_numpy_from_buffer_efficient
+from hailo_apps.python.core.common.buffer_utils import get_caps_from_pad
 from hailo_apps.python.core.common.hailo_logger import get_logger
 from hailo_apps.python.core.common.magic_mirror_handler import MagicMirrorHandler
-from hailo_apps.python.core.common.telegram_handler import TelegramHandler
 from hailo_apps.python.core.gstreamer.gstreamer_app import app_callback_class
 from hailo_apps.python.pipeline_apps.magic_mirror.magic_mirror_pipeline import GStreamerMagicMirrorApp
 
@@ -37,12 +35,6 @@ def get_env_str(name, default=""):
 
 
 # region Constants
-TELEGRAM_ENABLED = False
-TELEGRAM_TOKEN = ''
-TELEGRAM_CHAT_ID = ''
-DISCORD_ENABLED = get_env_bool("HAILO_DISCORD_ENABLED", False)
-DISCORD_TOKEN = get_env_str("HAILO_DISCORD_TOKEN")
-DISCORD_CHANNEL_ID = get_env_str("HAILO_DISCORD_CHANNEL_ID")
 # MagicMirror² module integration (MMM-HailoVision REST API).
 MAGIC_MIRROR_ENABLED = get_env_bool("HAILO_MAGIC_MIRROR_ENABLED", False)
 MAGIC_MIRROR_API_URL = get_env_str("HAILO_MAGIC_MIRROR_API_URL")
@@ -69,30 +61,10 @@ class user_callbacks_class(app_callback_class):
         self.latest_gesture_frame = {}
         self.current_person_label = None
 
-        # Telegram settings as instance attributes
-        self.telegram_enabled = TELEGRAM_ENABLED
-        self.telegram_token = TELEGRAM_TOKEN
-        self.telegram_chat_id = TELEGRAM_CHAT_ID
-
-        # Discord settings as instance attributes
-        self.discord_enabled = DISCORD_ENABLED
-        self.discord_token = DISCORD_TOKEN
-        self.discord_channel_id = DISCORD_CHANNEL_ID
-
         # MagicMirror settings as instance attributes
         self.magic_mirror_enabled = MAGIC_MIRROR_ENABLED
         self.magic_mirror_api_url = MAGIC_MIRROR_API_URL
         self.magic_mirror_api_token = MAGIC_MIRROR_API_TOKEN
-
-        # Initialize TelegramHandler if Telegram is enabled
-        self.telegram_handler = None
-        if self.telegram_enabled and self.telegram_token and self.telegram_chat_id:
-            self.telegram_handler = TelegramHandler(self.telegram_token, self.telegram_chat_id)
-
-        # Initialize DiscordHandler if Discord is enabled
-        self.discord_handler = None
-        if self.discord_enabled and self.discord_token and self.discord_channel_id:
-            self.discord_handler = DiscordHandler(self.discord_token, self.discord_channel_id)
 
         # Initialize MagicMirrorHandler if MagicMirror integration is enabled
         self.magic_mirror_handler = None
@@ -100,25 +72,6 @@ class user_callbacks_class(app_callback_class):
             self.magic_mirror_handler = MagicMirrorHandler(
                 self.magic_mirror_api_url, self.magic_mirror_api_token
             )
-
-    def send_notification(self, name, global_id, confidence, frame):
-        """
-        Check if notification handlers are enabled and send notifications.
-        """
-        if (
-            self.telegram_enabled
-            and self.telegram_handler
-            and self.telegram_handler.should_send_notification(global_id)
-        ):
-            self.telegram_handler.send_notification(name, global_id, confidence, frame)
-
-        if (
-            self.discord_enabled
-            and self.discord_handler
-            and self.discord_handler.should_send_notification(global_id)
-        ):
-            self.discord_handler.send_notification(name, global_id, confidence, frame)
-    # endregion
 
     def send_magic_mirror_action(self, action, face=None, confidence=None):
         """Forward a recognized action/face to the MagicMirror module (if enabled)."""
@@ -210,7 +163,6 @@ def app_callback(element, buffer, user_data):
         return
     pad = element.get_static_pad("src")
     format, width, height = get_caps_from_pad(pad)
-    frame = None
     roi = hailo.get_roi_from_buffer(buffer)
     detections = roi.get_objects_typed(hailo.HAILO_DETECTION)
     for detection in detections:
@@ -276,15 +228,6 @@ def app_callback(element, buffer, user_data):
                     f'Gesture recognition: {gesture_name} from {wrist_name} '
                     f'for person ID: {track_id} (Confidence: {confidence:.1f})'
                 )
-                if user_data.telegram_enabled or user_data.discord_enabled:
-                    if frame is None:
-                        frame = get_numpy_from_buffer_efficient(buffer, format, width, height)
-                    user_data.send_notification(
-                        name=gesture_name,
-                        global_id=f"gesture:{track_id}:{gesture_name}",
-                        confidence=confidence,
-                        frame=frame,
-                    )
                 # Forward the swipe gesture to MagicMirror, tagged with the
                 # currently recognized person so per-face actions can apply.
                 user_data.send_magic_mirror_action(

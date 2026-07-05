@@ -476,67 +476,27 @@ visualize_embeddings(db)  # Opens FiftyOne app with visualization
 
 ## Communication & Integration
 
-### `telegram_handler.py`
-**Purpose**: Telegram bot integration for sending notifications and alerts.
+### `magic_mirror_handler.py`
+**Purpose**: Sends recognized actions to the MMM-HailoVision MagicMirror² module's REST API.
 
 **Key Features**:
-- Send photo notifications via Telegram
-- Rate limiting (1 notification per hour per person)
-- Automatic image conversion from numpy arrays
-- Configurable captions with confidence scores
+- POSTs `{action, face, confidence}` for every recognized action (`face_recognition`, `swipe_left`, `swipe_right`, ...)
+- Optional shared-secret token authentication
+- Failures are logged but never raised, so the pipeline keeps running even when MagicMirror is unreachable
 
 **Main Class**:
-- `TelegramHandler`: Manages Telegram bot communication
+- `MagicMirrorHandler`: Manages HTTP communication with the MagicMirror module
 
 **Key Methods**:
-- `send_notification(name, global_id, confidence, frame)`: Send notification with image
-- `should_send_notification(global_id)`: Check if notification should be sent (rate limiting)
+- `send_action(action, face=None, confidence=None)`: POST a recognized action/face to the MagicMirror module
 
 **Usage Example**:
 ```python
-from hailo_apps.python.core.common.telegram_handler import TelegramHandler
+from hailo_apps.python.core.common.magic_mirror_handler import MagicMirrorHandler
 
-handler = TelegramHandler(token="YOUR_BOT_TOKEN", chat_id="YOUR_CHAT_ID")
+handler = MagicMirrorHandler(api_url="http://localhost:8080/MMM-HailoVision/action", api_token="optional-shared-secret")
 
-if handler.should_send_notification(person_id):
-    handler.send_notification(
-        name="Alice",
-        global_id=person_id,
-        confidence=0.95,
-        frame=detected_frame
-    )
-```
-
-### `discord_handler.py`
-**Purpose**: Discord bot integration for posting messages to a channel.
-
-**Key Features**:
-- Send plain text messages via the Discord Bot API
-- Rate limiting (1 notification per hour per person)
-- Configurable notification messages with confidence scores
-
-**Main Class**:
-- `DiscordHandler`: Manages Discord bot communication
-
-**Key Methods**:
-- `send_message(message)`: Post a plain text message to the configured channel
-- `send_notification(name, global_id, confidence, frame=None)`: Send a face-recognition style notification
-- `should_send_notification(global_id)`: Check if notification should be sent (rate limiting)
-
-**Usage Example**:
-```python
-from hailo_apps.python.core.common.discord_handler import DiscordHandler
-
-handler = DiscordHandler(token="YOUR_BOT_TOKEN", channel_id="YOUR_CHANNEL_ID")
-
-handler.send_message("Hello from Hailo Apps")
-
-if handler.should_send_notification(person_id):
-    handler.send_notification(
-        name="Alice",
-        global_id=person_id,
-        confidence=0.95,
-    )
+handler.send_action(action="face_recognition", face="Alice", confidence=0.95)
 ```
 
 ---
@@ -575,7 +535,6 @@ from hailo_apps.python.core.common.hailo_inference import HailoInfer
 - `hailo_platform`: Required for `hailo_inference.py` and `hef_utils.py`
 - `lancedb`: Required for `db_handler.py`
 - `fiftyone`: Required for `embedding_visualizer.py`
-- `telebot`: Required for `telegram_handler.py`
 - `GStreamer` (gi.repository.Gst): Required for `buffer_utils.py`
 
 ---

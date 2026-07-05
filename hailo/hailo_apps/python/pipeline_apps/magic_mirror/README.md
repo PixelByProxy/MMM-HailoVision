@@ -23,7 +23,7 @@ This project is moderately advanced and is recommended for use after gaining som
 
 The system supports real-time face recognition using GStreamer pipelines and the Hailo neural network AI accelerator.
 
-Magic Mirror also runs pose estimation in run mode to recognize basic gestures. The initial supported gestures are `swipe_left` and `swipe_right`; when detected, they are printed and sent through the configured notification handlers.
+Magic Mirror also runs pose estimation in run mode to recognize basic gestures. The initial supported gestures are `swipe_left` and `swipe_right`; when detected, they are printed and forwarded to the MagicMirror² module (see below).
 
 It can train the known persons' catalog *from a provided directory with images of persons* (train mode below).
 
@@ -32,8 +32,6 @@ The information is managed in a local ("on a file") database optimized for stori
 The system provides an optional web interface, powered by the well-known FiftyOne platform (Python package installation required), for managing face recognition data, including visualizing embeddings and adding, updating, or deleting persons and their associated images. The web interface runs on localhost and interacts with the local LanceDB database.
 
 In addition, the db_handler.py module provides a custom API for interactions with the LanceDB database for fine-grained DB management.
-
-For demonstration purposes, the current application demonstrates sending Telegram or Discord notifications via a bot when a person (either recognized or unknown) is detected. To enable Telegram, the Telebot package is required but not installed by default, so you need to install it separately. Discord notifications use the Discord Bot API and require a bot token and channel ID. In their absence, the function will simply do nothing. Please refer to Telegram or Discord guides on how to set up a bot.
 
 For each face detection, there is a confidence level, followed by another confidence level for the recognition itself - in case the face was recognized as someone from the database.
 
@@ -109,29 +107,6 @@ Please refer to the https://voxel51.com/fiftyone/ guide for more details about u
 
 ---
 
-## Telegram Notifications
-
-- Configure the `TELEGRAM_ENABLED`, `TELEGRAM_TOKEN`, and `TELEGRAM_CHAT_ID` in `magic_mirror.py` to enable Telegram notifications.
-- Notifications are sent when a face is detected, with an image and confidence score.
-
----
-
-## Discord Notifications
-
-- Configure Discord through environment variables before starting the app:
-
-   ```bash
-   export HAILO_DISCORD_ENABLED=true
-   export HAILO_DISCORD_TOKEN="YOUR_BOT_TOKEN"
-   export HAILO_DISCORD_CHANNEL_ID="YOUR_CHANNEL_ID"
-   python magic_mirror.py
-   ```
-
-- If these variables are not set, Discord notifications remain disabled by default.
-- Notifications are sent when a face is detected, with a text message and confidence score.
-
----
-
 ## MagicMirror² Integration
 
 The companion MagicMirror² module [`MMM-HailoVision`](../../../../../README.md)
@@ -140,7 +115,7 @@ recognized `face_recognition`, `swipe_left`, and `swipe_right` event (with the
 recognized face) to the module's REST API; the module then runs whatever
 notification/command you configured for that `(action, face)` pair.
 
-Enable it with environment variables (the same pattern as Discord):
+Enable it with environment variables:
 
 ```bash
 export HAILO_MAGIC_MIRROR_ENABLED=true
@@ -163,8 +138,6 @@ mirror and the Hailo pipeline run as a single application. See the module's
 
 - [GStreamer](https://gstreamer.freedesktop.org/)
 - [LanceDB](https://lancedb.github.io/)
-- [Telegram Bot API](https://core.telegram.org/bots/api)
-- [Discord Developer Portal](https://discord.com/developers/docs/intro)
 - [Voxel51](https://voxel51.com/fiftyone/)
 
 ## Appendix: Brief Explanation of the Code Architecture and Design
