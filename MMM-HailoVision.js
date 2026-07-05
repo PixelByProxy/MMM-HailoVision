@@ -54,6 +54,10 @@ Module.register("MMM-HailoVision", {
     // "rpi" (Raspberry Pi camera). Leave empty/undefined to omit --input, in
     // which case the pipeline uses its bundled test video.
     cameraInputMode: "",
+    // Directory the pipeline reads face-training images from (one subfolder
+    // per person). Exported to the pipeline as HAILO_MAGIC_MIRROR_TRAIN_DIR.
+    // Leave empty to use the bundled default (<module>/hailo/.../magic_mirror/train).
+    trainingDir: "",
 
     // Show a small status line in the module region.
     showStatus: true

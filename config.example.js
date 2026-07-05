@@ -62,6 +62,11 @@
     // which case the pipeline uses its bundled test video.
     cameraInputMode: "",
 
+    // Directory with face-training images (one subfolder per person, e.g.
+    // trainingDir: "/home/pi/faces" containing faces/Alice/*.jpg). Leave
+    // empty to use the bundled default inside the module.
+    trainingDir: "",
+
     showStatus: true
   }
 }

@@ -279,6 +279,11 @@ module.exports = NodeHelper.create({
     if (this.config.apiToken) {
       env.HAILO_MAGIC_MIRROR_API_TOKEN = this.config.apiToken;
     }
+    // Where the pipeline reads face-training images from. Passed as an env
+    // var (not a shell argument), so arbitrary paths are safe to forward.
+    if (this.config.trainingDir) {
+      env.HAILO_MAGIC_MIRROR_TRAIN_DIR = String(this.config.trainingDir);
+    }
 
     // Tie the pipeline's lifetime to this host process at the kernel level:
     // setpriv sets PR_SET_PDEATHSIG so the OS sends the pipeline SIGTERM the

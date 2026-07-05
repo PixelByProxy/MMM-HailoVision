@@ -102,7 +102,18 @@ class GStreamerMagicMirrorApp(GStreamerApp):
 
         # Initialize directories
         current_dir = Path(__file__).parent
-        self.train_images_dir = current_dir / FACE_RECON_TRAIN_DIR_NAME
+        # The training-images directory can be relocated with
+        # HAILO_MAGIC_MIRROR_TRAIN_DIR (the MMM-HailoVision launcher sets it
+        # from its `trainingDir` config option). Default lives next to this
+        # script.
+        train_dir_env = os.environ.get("HAILO_MAGIC_MIRROR_TRAIN_DIR", "").strip()
+        # Only the default (bundled) directory gets seeded with the sample
+        # training images when empty; a user-provided directory is left as-is.
+        self.using_default_train_dir = not train_dir_env
+        if train_dir_env:
+            self.train_images_dir = Path(train_dir_env).expanduser()
+        else:
+            self.train_images_dir = current_dir / FACE_RECON_TRAIN_DIR_NAME
         self.samples_dir = current_dir / FACE_RECON_SAMPLES_DIR_NAME
         self.database_dir = current_dir / FACE_RECON_DATABASE_DIR_NAME
         os.makedirs(self.train_images_dir, exist_ok=True)
@@ -253,10 +264,15 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         """
         Iterate over the training folder structured with subfolders (person names),
         generates embeddings for each image, and stores them in the database with the person's name.
-        In case training folder is empty - copy from the defaukt local resources folder the exmpale training images.
+        If the default (bundled) training folder is empty, seed it with the example
+        training images from the local resources folder. A user-configured folder
+        (HAILO_MAGIC_MIRROR_TRAIN_DIR) is never seeded; if empty, training is skipped.
         """
         # Check if the directory is empty
         if not os.listdir(self.train_images_dir):
+            if not self.using_default_train_dir:
+                print(f"Training directory {self.train_images_dir} is empty; nothing to train.")
+                return
             print(f"Training directory {self.train_images_dir} is empty. Copying default training images from local resources.")
             source_dir = get_resource_path(pipeline_name=None, resource_type=DEFAULT_LOCAL_RESOURCES_PATH, arch=self.arch, model=FACE_RECON_LOCAL_SAMPLES_DIR_NAME)
             for item in os.listdir(source_dir):
