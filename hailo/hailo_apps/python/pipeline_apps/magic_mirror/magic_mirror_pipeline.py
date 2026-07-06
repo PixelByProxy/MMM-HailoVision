@@ -65,6 +65,10 @@ from hailo_apps.python.core.common.hailo_logger import get_logger
 hailo_logger = get_logger(__name__)
 # endregion imports
 
+# Files in a person's training folder that are fed to the pipeline; anything
+# else (stray .DS_Store, READMEs, ...) is skipped instead of aborting the run.
+TRAIN_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
 class GStreamerMagicMirrorApp(GStreamerApp):
     def __init__(self, app_callback, user_data, parser=None):
         if parser is None:
@@ -236,7 +240,9 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         display_pipeline = DISPLAY_PIPELINE(video_sink=self.video_sink, sync=self.sync, show_fps=self.show_fps)
 
         if self.options_menu.mode == 'train':
-            source_pipeline = (f"multifilesrc location={self.current_file} loop=true num-buffers=30 ! "  # each image 30 times
+            # Quote the location: training paths are user-provided (HAILO_MAGIC_MIRROR_TRAIN_DIR)
+            # and an unquoted space would abort gst_parse_launch.
+            source_pipeline = (f"multifilesrc location=\"{self.current_file}\" loop=true num-buffers=30 ! "  # each image 30 times
                                f"decodebin ! videoconvert n-threads=4 qos=false ! video/x-raw, format=RGB, pixel-aspect-ratio=1/1 ")
             vector_db_callback_pipeline = USER_CALLBACK_PIPELINE(name=self.train_vector_db_callback_name)
             display_pipeline = DISPLAY_PIPELINE(video_sink=self.video_sink, sync=self.sync, show_fps=self.show_fps)
@@ -292,6 +298,9 @@ class GStreamerMagicMirrorApp(GStreamerApp):
                 continue
             print(f"Processing person: {person_name}")
             for image_file in os.listdir(person_folder):
+                if os.path.splitext(image_file)[1].lower() not in TRAIN_IMAGE_EXTENSIONS:
+                    print(f"Skipping non-image file: {image_file}")
+                    continue
                 print(f"Processing image: {image_file}")
                 self.current_file = os.path.join(person_folder, image_file)
                 self.create_pipeline()

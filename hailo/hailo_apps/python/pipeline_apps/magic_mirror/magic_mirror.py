@@ -49,6 +49,11 @@ GESTURE_SMOOTHING_SAMPLES = 3
 # Fraction of total horizontal travel that must be in the dominant direction for a clean swipe
 # (rejects back-and-forth waves and noisy jitter that net out to a false direction).
 GESTURE_DIRECTION_CONSISTENCY = 0.75
+# Consecutive classifications a NEW person label must persist before we accept the switch.
+# Recognition confidence flickers around the threshold (Alice <-> Unknown), and every accepted
+# switch fires a face_recognition action and clears gesture state - so unstable labels must not
+# get through. Any frame of the current label resets the challenger's count.
+FACE_STABLE_FRAMES = 10
 # endregion
 
 
@@ -60,6 +65,8 @@ class user_callbacks_class(app_callback_class):
         self.gesture_tracks = {}
         self.latest_gesture_frame = {}
         self.current_person_label = None
+        self.candidate_person_label = None
+        self.candidate_person_frames = 0
 
         # MagicMirror settings as instance attributes
         self.magic_mirror_enabled = MAGIC_MIRROR_ENABLED
@@ -82,12 +89,29 @@ class user_callbacks_class(app_callback_class):
         """
         Reset gesture state when face recognition switches to a different person.
 
-        Returns True when the recognized person changed (a new face), so the
-        caller can forward a one-shot ``face_recognition`` action.
+        A switch is only accepted after the new label has been seen for
+        FACE_STABLE_FRAMES consecutive classifications, so confidence flicker
+        around the recognition threshold doesn't re-fire actions or wipe
+        gesture history.
+
+        Returns True when the recognized person changed (a new, stable face),
+        so the caller can forward a one-shot ``face_recognition`` action.
         """
         if person_label == self.current_person_label:
+            # Current label re-confirmed; any challenger was just flicker.
+            self.candidate_person_label = None
+            self.candidate_person_frames = 0
+            return False
+        if person_label != self.candidate_person_label:
+            self.candidate_person_label = person_label
+            self.candidate_person_frames = 1
+            return False
+        self.candidate_person_frames += 1
+        if self.candidate_person_frames < FACE_STABLE_FRAMES:
             return False
         self.current_person_label = person_label
+        self.candidate_person_label = None
+        self.candidate_person_frames = 0
         self.gesture_tracks.clear()
         self.latest_gesture_frame.clear()
         return True

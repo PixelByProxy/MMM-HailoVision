@@ -21,8 +21,14 @@ const path = require("path");
 // Hailo device.
 const HAILO_APP_PROCTITLE = "Hailo Magic Mirror App";
 
-// How long to wait before relaunching the pipeline after it exits.
+// How long to wait before relaunching the pipeline after it exits. The delay
+// doubles after every failed run (up to the cap below) so a pipeline that
+// crashes on startup — missing venv, unplugged Hailo device — doesn't spin a
+// pkill + train + spawn cycle every few seconds forever. A run that survives
+// HAILO_STABLE_RUN_MS resets the backoff.
 const HAILO_RESTART_DELAY_MS = 5000;
+const HAILO_RESTART_MAX_DELAY_MS = 5 * 60 * 1000;
+const HAILO_STABLE_RUN_MS = 60 * 1000;
 
 // Allowed values for the config's `cameraInputMode`. Only whitelisted values
 // are ever interpolated into the launch command (it runs through bash), so
@@ -35,6 +41,9 @@ module.exports = NodeHelper.create({
     this.routeMounted = false;
     this.hailoProcess = null;
     this.stopping = false;
+    this.restartTimer = null;
+    this.restartDelay = HAILO_RESTART_DELAY_MS;
+    this.lastSpawnTime = 0;
     // Reap the detached pipeline on every teardown path so it can't be
     // orphaned and keep holding the (single) Hailo device.
     //
@@ -176,15 +185,17 @@ module.exports = NodeHelper.create({
 
   // ---- Hailo pipeline launcher -----------------------------------------
   buildApiUrl() {
-    // The Python pipeline POSTs back to this module. MagicMirror serves on
-    // address/port from its own config; default to localhost:8080.
+    // The Python pipeline POSTs back to this module, which always runs on the
+    // same host, so localhost is correct — only the port varies. Mirror
+    // MagicMirror's own resolution order (js/server.js): MM_PORT env first,
+    // then config.port (forwarded by the frontend as mmPort), then 8080.
     const apiPath = String(this.config.apiPath || "MMM-HailoVision/action").replace(/^\/+/, "");
-    const port = process.env.MM_PORT || 8080;
+    const port = process.env.MM_PORT || this.config.mmPort || 8080;
     return `http://localhost:${port}/${apiPath}`;
   },
 
   launchHailoApp() {
-    if (this.hailoProcess) {
+    if (this.hailoProcess || this.stopping) {
       return;
     }
     // A pipeline launched detached (below) survives if MagicMirror is killed
@@ -308,6 +319,7 @@ module.exports = NodeHelper.create({
     // children) at once and never orphan the preview window.
     const child = spawn(spawnCmd, spawnArgs, { cwd, env, detached: true });
     this.hailoProcess = child;
+    this.lastSpawnTime = Date.now();
     this.sendSocketNotification("HAILO_STATUS", { status: "pipeline running" });
 
     child.stdout.on("data", (data) => Log.info(`[hailo] ${data.toString().trim()}`));
@@ -317,17 +329,32 @@ module.exports = NodeHelper.create({
       Log.warn(`${this.name}: Hailo pipeline exited (code=${code} signal=${signal})`);
       this.hailoProcess = null;
       this.sendSocketNotification("HAILO_STATUS", { status: "pipeline stopped" });
-      if (!this.stopping) {
-        Log.info(`${this.name}: restarting Hailo pipeline in ${HAILO_RESTART_DELAY_MS}ms`);
-        setTimeout(() => this.launchHailoApp(), HAILO_RESTART_DELAY_MS);
+      // A run that lived long enough was healthy; start the backoff over.
+      if (Date.now() - this.lastSpawnTime >= HAILO_STABLE_RUN_MS) {
+        this.restartDelay = HAILO_RESTART_DELAY_MS;
       }
+      this.scheduleRestart();
     });
 
     child.on("error", (err) => {
       Log.error(`${this.name}: failed to start Hailo pipeline: ${err.message}`);
       this.hailoProcess = null;
       this.sendSocketNotification("HAILO_STATUS", { status: "pipeline error" });
+      this.scheduleRestart();
     });
+  },
+
+  // Relaunch the pipeline after the current backoff delay. Replaces any
+  // pending restart (spawn failures can fire both "error" and "exit") and is
+  // a no-op once shutdown has started.
+  scheduleRestart() {
+    if (this.stopping) {
+      return;
+    }
+    clearTimeout(this.restartTimer);
+    Log.info(`${this.name}: restarting Hailo pipeline in ${this.restartDelay}ms`);
+    this.restartTimer = setTimeout(() => this.launchHailoApp(), this.restartDelay);
+    this.restartDelay = Math.min(this.restartDelay * 2, HAILO_RESTART_MAX_DELAY_MS);
   },
 
   // Terminate the pipeline and everything it spawned. Signals the whole
@@ -354,6 +381,7 @@ module.exports = NodeHelper.create({
   stop() {
     // Called by MagicMirror on shutdown.
     this.stopping = true;
+    clearTimeout(this.restartTimer);
     Log.info(`${this.name}: stopping Hailo pipeline`);
     this.killPipeline("SIGTERM");
   }

@@ -86,7 +86,7 @@ into the pipeline process so it knows where to POST:
 
 ```
 HAILO_MAGIC_MIRROR_ENABLED=true
-HAILO_MAGIC_MIRROR_API_URL=http://localhost:8080/MMM-HailoVision/action
+HAILO_MAGIC_MIRROR_API_URL=http://localhost:<MagicMirror port>/MMM-HailoVision/action
 HAILO_MAGIC_MIRROR_API_TOKEN=<apiToken, if set>
 ```
 

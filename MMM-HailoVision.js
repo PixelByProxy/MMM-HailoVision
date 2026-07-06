@@ -68,8 +68,11 @@ Module.register("MMM-HailoVision", {
     this.lastEvent = null;
     Log.info(`Starting module: ${this.name}`);
     // Hand the config to node_helper so it can mount the REST route and,
-    // optionally, launch the Hailo pipeline.
-    this.sendSocketNotification("HAILO_CONFIG", this.config);
+    // optionally, launch the Hailo pipeline. Include MagicMirror's actual
+    // port (from the global config) so the helper can build the callback URL
+    // the pipeline POSTs to — the helper itself has no access to it.
+    const mmPort = typeof config !== "undefined" && config.port ? config.port : undefined;
+    this.sendSocketNotification("HAILO_CONFIG", Object.assign({}, this.config, { mmPort }));
   },
 
   getStyles() {
@@ -103,14 +106,16 @@ Module.register("MMM-HailoVision", {
 
     const statusEl = document.createElement("div");
     statusEl.className = "hailo-status";
-    statusEl.innerHTML = `Hailo: ${this.status}`;
+    statusEl.textContent = `Hailo: ${this.status}`;
     wrapper.appendChild(statusEl);
 
     if (this.lastEvent) {
       const eventEl = document.createElement("div");
       eventEl.className = "hailo-event dimmed small";
+      // textContent, never innerHTML: `face` comes from the network (any
+      // string matches the "*" handler) and must not be parsed as HTML.
       const face = this.lastEvent.face || "?";
-      eventEl.innerHTML = `${this.lastEvent.action} &rarr; ${face}`;
+      eventEl.textContent = `${this.lastEvent.action} → ${face}`;
       wrapper.appendChild(eventEl);
     }
 
