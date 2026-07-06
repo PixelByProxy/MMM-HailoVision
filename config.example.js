@@ -15,8 +15,12 @@
     //   http://<mirror-host>:<mm-port>/MMM-HailoVision/action
     apiPath: "MMM-HailoVision/action",
     // Optional shared secret (also set HAILO_MAGIC_MIRROR_API_TOKEN on the
-    // Python side, which the launcher injects automatically).
+    // Python side, which the launcher injects automatically). Sent in the
+    // "X-Hailo-Token" request header.
     apiToken: "",
+    // Minimum ms between two executions of the same (action, face) handler;
+    // 0 disables rate limiting.
+    actionCooldownMs: 500,
 
     // action -> face -> { notification, payload, shell }
     actions: {

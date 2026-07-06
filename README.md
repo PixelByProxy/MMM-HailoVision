@@ -24,21 +24,25 @@ Supported actions out of the box: `face_recognition`, `swipe_left`,
 
 ## Installation
 
-**Option A — deploy script (recommended).** Copies just the module files into
-your MagicMirror install and (re)injects the config block:
-
-```bash
-/home/pi/Documents/repos/hailo-apps-magic-mirror/scripts/deploy_magic_mirror.sh
-```
-
-**Option B — symlink.** This repo root is the module, so symlink it directly:
+Clone this repository into your MagicMirror `modules/` directory (the repo
+root **is** the module) and install its one dependency:
 
 ```bash
 cd ~/MagicMirror/modules
-ln -s /home/pi/Documents/repos/hailo-apps-magic-mirror MMM-HailoVision
+git clone https://github.com/PixelByProxy/MMM-HailoVision.git
 cd MMM-HailoVision
 npm install        # installs express
 ```
+
+Then either add the module block to your MagicMirror config by hand (see
+below), or let the deploy script (re)inject it and restart MagicMirror:
+
+```bash
+scripts/deploy_magic_mirror.sh
+```
+
+The module runs in place — the deploy script only manages the config block
+and the MagicMirror restart; it does not copy files.
 
 ## Configuration
 
@@ -48,7 +52,8 @@ Add a module block to your MagicMirror `config/config.js`. See
 | Option | Default | Description |
 |---|---|---|
 | `apiPath` | `MMM-HailoVision/action` | Path the REST endpoint is mounted on. |
-| `apiToken` | `""` | Optional shared secret. When set, requests must send it in the `X-Hailo-Token` header (or a `token` body field). |
+| `apiToken` | `""` | Optional shared secret. When set, requests must send it in the `X-Hailo-Token` header. |
+| `actionCooldownMs` | `500` | Minimum milliseconds between two executions of the same `(action, face)` handler; repeated events inside the window are acknowledged but not acted on. `0` disables rate limiting. |
 | `actions` | see below | `action → face → handler` map. |
 | `launchHailoApp` | `true` | Launch the Hailo Python pipeline on startup. |
 | `cameraInputMode` | `""` | Camera source for the pipeline: `"usb"` (USB webcam, auto-detected) or `"rpi"` (Raspberry Pi camera). Empty/undefined omits `--input`, so the pipeline uses its bundled test video. |

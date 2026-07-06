@@ -44,6 +44,8 @@ module.exports = NodeHelper.create({
     this.restartTimer = null;
     this.restartDelay = HAILO_RESTART_DELAY_MS;
     this.lastSpawnTime = 0;
+    // Per-(action, face) timestamps for the actionCooldownMs rate limit.
+    this.lastActionTime = new Map();
     // Reap the detached pipeline on every teardown path so it can't be
     // orphaned and keep holding the (single) Hailo device.
     //
@@ -59,7 +61,10 @@ module.exports = NodeHelper.create({
       process.once(sig, () => {
         this.stopping = true;
         this.killPipeline("SIGKILL");
-        process.exit(0);
+        // Re-raise instead of process.exit(0): our `once` handler is gone
+        // now, so the signal falls through to MagicMirror's own handlers (or
+        // the default action) rather than us preempting the host's cleanup.
+        process.kill(process.pid, sig);
       });
     }
     Log.info(`Starting node_helper for: ${this.name}`);
@@ -89,8 +94,8 @@ module.exports = NodeHelper.create({
     const apiPath = "/" + String(this.config.apiPath || "MMM-HailoVision/action").replace(/^\/+/, "");
 
     // MagicMirror exposes a shared Express instance as this.expressApp.
-    // body-parser/express.json is already registered by MagicMirror core, but
-    // register a tolerant JSON parser scoped to our route just in case.
+    // MagicMirror core does NOT register a JSON body parser, so this
+    // route-scoped parser is required for req.body to be populated.
     const express = require("express");
     this.expressApp.use(apiPath, express.json());
 
@@ -110,9 +115,11 @@ module.exports = NodeHelper.create({
   handleActionRequest(req, res) {
     const body = req.body || {};
 
-    // Optional shared-secret check.
+    // Optional shared-secret check. Header only: accepting the token in the
+    // JSON body too just widens where the secret can end up (request logs,
+    // error echoes).
     if (this.config.apiToken) {
-      const provided = req.get("X-Hailo-Token") || body.token;
+      const provided = req.get("X-Hailo-Token");
       if (provided !== this.config.apiToken) {
         Log.warn(`${this.name}: rejected request with invalid token`);
         return res.status(401).json({ ok: false, error: "invalid token" });
@@ -129,6 +136,20 @@ module.exports = NodeHelper.create({
     if (!handler) {
       Log.info(`${this.name}: no handler configured for action='${action}' face='${face}'`);
       return res.json({ ok: true, matched: false, action, face });
+    }
+
+    // Rate limit: a flood of identical events (rapid repeated swipes, a
+    // flapping recognition) would otherwise become a notification/shell-exec
+    // flood. Mirrors the pipeline's own gesture cooldown, server-side.
+    const cooldownMs = Number(this.config.actionCooldownMs) || 0;
+    if (cooldownMs > 0) {
+      const key = JSON.stringify([action, face]);
+      const now = Date.now();
+      const last = this.lastActionTime.get(key) || 0;
+      if (now - last < cooldownMs) {
+        return res.json({ ok: true, matched: true, throttled: true, action, face });
+      }
+      this.lastActionTime.set(key, now);
     }
 
     Log.info(`${this.name}: action='${action}' face='${face}' -> ${JSON.stringify(handler)}`);
@@ -209,15 +230,22 @@ module.exports = NodeHelper.create({
   // SIGTERM then (after a grace period) SIGKILL any process whose title matches
   // the Hailo pipeline, then invoke `done`. Best-effort: pkill is absent on
   // some systems, and "no matches" is the normal, healthy case.
+  //
+  // -x makes -f match the WHOLE command line exactly. setproctitle rewrites
+  // the pipeline's cmdline to exactly HAILO_APP_PROCTITLE, so this matches
+  // only the pipeline itself — not, say, an editor with a like-named file
+  // open, whose cmdline merely contains the phrase.
   reapStalePipelines(done) {
     const needle = JSON.stringify(HAILO_APP_PROCTITLE); // shell-quote (has spaces)
-    exec(`pkill -TERM -f ${needle}`, (err) => {
-      // pkill exits 1 when nothing matched — that's the expected happy path.
-      if (!err) {
-        Log.warn(`${this.name}: reaped a stale Hailo pipeline (SIGTERM)`);
+    exec(`pkill -TERM -xf ${needle}`, (err) => {
+      if (err) {
+        // pkill exits 1 when nothing matched — the expected happy path.
+        // No stale pipeline, so skip the SIGKILL grace period entirely.
+        return done();
       }
+      Log.warn(`${this.name}: reaped a stale Hailo pipeline (SIGTERM)`);
       setTimeout(() => {
-        exec(`pkill -KILL -f ${needle}`, () => done());
+        exec(`pkill -KILL -xf ${needle}`, () => done());
       }, 2000);
     });
   },

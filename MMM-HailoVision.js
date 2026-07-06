@@ -19,8 +19,13 @@ Module.register("MMM-HailoVision", {
     // must POST to is:  http://<mirror-host>:<mm-port>/<apiPath>
     apiPath: "MMM-HailoVision/action",
     // Optional shared secret. If set, incoming requests must send the same
-    // value in the "X-Hailo-Token" header (or a "token" body field).
+    // value in the "X-Hailo-Token" header.
     apiToken: "",
+
+    // Minimum milliseconds between two executions of the same (action, face)
+    // handler. Repeated events inside the window are acknowledged but not
+    // acted on. 0 disables rate limiting.
+    actionCooldownMs: 500,
 
     // ---- Action mapping ----
     // actions[action][face] = { notification, payload, shell }
@@ -83,7 +88,9 @@ Module.register("MMM-HailoVision", {
   socketNotificationReceived(notification, payload) {
     if (notification === "HAILO_STATUS") {
       this.status = payload.status;
-      this.updateDom();
+      if (this.config.showStatus) {
+        this.updateDom();
+      }
     } else if (notification === "HAILO_ACTION") {
       // node_helper resolved an (action, face) pair and asked us to broadcast
       // a notification into the rest of MagicMirror.
@@ -91,7 +98,9 @@ Module.register("MMM-HailoVision", {
       if (payload.notification) {
         this.sendNotification(payload.notification, payload.payload || {});
       }
-      this.updateDom();
+      if (this.config.showStatus) {
+        this.updateDom();
+      }
     }
   },
 
@@ -100,7 +109,6 @@ Module.register("MMM-HailoVision", {
     wrapper.className = "hailo-magic-mirror";
 
     if (!this.config.showStatus) {
-      wrapper.style.display = "none";
       return wrapper;
     }
 

@@ -70,6 +70,10 @@ hailo_logger = get_logger(__name__)
 TRAIN_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 class GStreamerMagicMirrorApp(GStreamerApp):
+    # Cap on track_id_frame_count entries; stale track IDs are evicted (see
+    # vector_db_callback) so a 24/7 run doesn't grow the dict forever.
+    TRACK_STATE_MAX_ENTRIES = 1000
+
     def __init__(self, app_callback, user_data, parser=None):
         if parser is None:
             parser = get_pipeline_parser()
@@ -95,12 +99,12 @@ class GStreamerMagicMirrorApp(GStreamerApp):
 
         # Criteria for when a candidate frame is good enough to try recognize a person from it (e.g., skip the first few frames since in them person only entered the frame and usually is blurry)
         json_file_path = os.path.join(os.path.dirname(__file__), "face_recon_algo_params.json")
-        with open(json_file_path, "r+") as json_file:
+        with open(json_file_path, "r") as json_file:
             self.algo_params = json.load(json_file)
-        # 1. How many frames to skip between detection attempts: avoid porocessing first frames since usually they are blurry since person just entered the frame, see self.track_id_frame_count
+        # 1. How many frames to skip between detection attempts: avoid processing first frames since usually they are blurry since person just entered the frame, see self.track_id_frame_count
         self.skip_frames = self.algo_params['skip_frames']
         # 2. Confidence threshold for face classification: if the confidence is below this value, the face will not be recognized
-        self.lance_db_vector_search_classificaiton_confidence_threshold = self.algo_params['lance_db_vector_search_classificaiton_confidence_threshold']
+        self.lance_db_vector_search_classification_confidence_threshold = self.algo_params['lance_db_vector_search_classification_confidence_threshold']
         # Both for face detection & recognition networks (not tunable from the UI)
         self.batch_size = self.algo_params['batch_size']
 
@@ -127,7 +131,7 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         self.db_handler = DatabaseHandler(db_name='persons.db', 
                                           table_name='persons', 
                                           schema=Record, 
-                                          threshold=self.lance_db_vector_search_classificaiton_confidence_threshold,
+                                          threshold=self.lance_db_vector_search_classification_confidence_threshold,
                                           database_dir=self.database_dir,
                                           samples_dir=self.samples_dir)
 
@@ -138,7 +142,7 @@ class GStreamerMagicMirrorApp(GStreamerApp):
             self.video_source = get_resource_path(pipeline_name=None, resource_type=RESOURCES_VIDEOS_DIR_NAME, arch=self.arch, model=FACE_RECOGNITION_VIDEO_NAME)
         
         self.current_file = None  # for train mode
-        self.processed_names = set()  # ((key-name, val-global_id)) for train mode - pipeline will be playing for 2 seconds, so we need to ensure each person will be processed only once
+        self.processed_names = {}  # name -> global_id for train mode - pipeline will be playing for 2 seconds, so we need to ensure each person will be processed only once
         self.processed_files = set()  # for train mode - pipeline will be playing for 2 seconds, so we need to ensure each file will be processed only once
 
         # Resolve HEF paths for multi-model app. All three models are registered
@@ -189,7 +193,7 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         # run_training(); don't create one here. At this point self.current_file
         # is still None, so a pipeline built now would be a junk
         # 'multifilesrc location=None' that holds a vdevice and is never used.
-        self.track_id_frame_count = {}  # Dictionary to track frame counts for each track ID - avoid porocessing first frames since usually they are blurry since person just entered the frame 
+        self.track_id_frame_count = {}  # Dictionary to track frame counts for each track ID - avoid processing first frames since usually they are blurry since person just entered the frame
         self.tracker = HailoTracker.get_instance()  # tracker object
 
         # region worker queue threads for saving images
@@ -368,43 +372,14 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         task = {'type': task_type, **kwargs}
         self.task_queue.put(task)
 
-    def get_processed_names_by_name(self, key):
-        """
-        Retrieve a value from the processed_names set by its key.
-
-        Args:
-            key (str): The key to search for.
-
-        Returns:
-            Any: The value associated with the key, or None if the key is not found.
-        """
-        for k, v in self.processed_names:
-            if k == key:
-                return v
-        return None
-    
-    def is_name_processed(self, key):
-        """
-        Check if a key exists in the processed_names set.
-
-        Args:
-            key (str): The key to check.
-
-        Returns:
-            bool: True if the key exists, False otherwise.
-        """
-        for k, _ in self.processed_names:
-            if k == key:
-                return True
-        return False
-
     def vector_db_callback(self, pad, info, user_data):
         tracker_names = self.tracker.get_trackers_list()
+        if not tracker_names:
+            return Gst.PadProbeReturn.OK
         tracker_name = 'hailo_face_tracker' if 'hailo_face_tracker' in tracker_names else tracker_names[0]
         buffer = info.get_buffer()
         if buffer is None:
             return Gst.PadProbeReturn.OK
-        format, width, height = get_caps_from_pad(pad)
         roi = hailo.get_roi_from_buffer(buffer)
         
         # for each face detection
@@ -421,13 +396,12 @@ class GStreamerMagicMirrorApp(GStreamerApp):
             if len(embedding) == 0:
                 continue  # if cropper pipeline element decided to pass the detection - it will arrive to this stage of the pipeline without face embedding
             if len(embedding) > 1:
-                print(f"Warning: Multiple embeddings found for track ID {track_id}. Using the first one.") 
-                detection.remove_object(embedding[0])
+                print(f"Warning: Multiple embeddings found for track ID {track_id}. Skipping this detection.")
                 continue
-            # exactly single embedding is expected, so we can safely remove it from the detection
             embedding_vector = np.array(embedding[0].get_data())
             person = self.db_handler.search_record(embedding=embedding_vector)  # most time consuming operation - search the database for the person with the closest embedding
-            new_confidence = (1-person['_distance'])
+            # Clamp: cosine distance can exceed 1, which would yield a negative confidence.
+            new_confidence = max(0.0, min(1.0, 1 - person['_distance']))
             classification = detection.get_objects_typed(hailo.HAILO_CLASSIFICATION)
             if not classification or classification[0].get_confidence() < new_confidence:
                 if classification:
@@ -440,6 +414,11 @@ class GStreamerMagicMirrorApp(GStreamerApp):
             # anyway re-process for "double-check" after self.skip_frames X 3
             self.track_id_frame_count[track_id] = -3 * self.skip_frames
 
+        # Track IDs increase monotonically forever on an always-on mirror, so
+        # evict the oldest-inserted (stale) entries to keep memory bounded.
+        while len(self.track_id_frame_count) > self.TRACK_STATE_MAX_ENTRIES:
+            self.track_id_frame_count.pop(next(iter(self.track_id_frame_count)))
+
         return Gst.PadProbeReturn.OK
     
     def train_vector_db_callback(self, pad, info, user_data):
@@ -448,8 +427,8 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         buffer = info.get_buffer()
         if buffer is None:
             return Gst.PadProbeReturn.OK
-        format, width, height = get_caps_from_pad(pad)
-        frame = get_numpy_from_buffer_efficient(buffer, format, width, height)
+        fmt, width, height = get_caps_from_pad(pad)
+        frame = get_numpy_from_buffer_efficient(buffer, fmt, width, height)
         roi = hailo.get_roi_from_buffer(buffer)
         if len(roi.get_objects_typed(hailo.HAILO_DETECTION)) == 0:
             print("No face detections found in the current frame.")
@@ -459,19 +438,22 @@ class GStreamerMagicMirrorApp(GStreamerApp):
             embedding = detection.get_objects_typed(hailo.HAILO_MATRIX)
             if len(embedding) != 1:  # we will continue if new embedding exists - might be new person, or another image of existing person
                 continue  # if cropper pipeline element decided to pass the detection - it will arrive to this stage of the pipeline without face embedding.
+            # Read the embedding data BEFORE removing the object from the
+            # detection - reading after the removal only works while the
+            # binding happens to keep the object alive.
+            embedding_vector = np.array(embedding[0].get_data())
             detection.remove_object(embedding[0])  # in case the detection pointer tracker pipeline element (from earlier side of the pipeline) holds is the same as the one we have, remove the embedding, so embedding similarity won't be part of the decision criteria
             cropped_frame = self.crop_frame(frame, detection.get_bbox(), width, height)
-            embedding_vector = np.array(embedding[0].get_data())
             image_path = os.path.join(self.samples_dir, f"{uuid.uuid4()}.jpeg")
             self.add_task('save_image', frame=cropped_frame, image_path=image_path)
             name = os.path.basename(os.path.dirname(self.current_file))
-            if self.is_name_processed(name):
-                self.db_handler.insert_new_sample(record=self.db_handler.get_record_by_id(self.get_processed_names_by_name(name)), embedding=embedding_vector, sample=image_path, timestamp=int(time.time())) 
+            if name in self.processed_names:
+                self.db_handler.insert_new_sample(record=self.db_handler.get_record_by_id(self.processed_names[name]), embedding=embedding_vector, sample=image_path, timestamp=int(time.time()))
                 print(f"Adding face to: {name}")
-            else: 
+            else:
                 person = self.db_handler.create_record(embedding=embedding_vector, sample=image_path, timestamp=int(time.time()), label=name)
                 print(f"New person added with ID: {person['global_id']}")
-                self.processed_names.add((name, person['global_id']))
+                self.processed_names[name] = person['global_id']
             self.processed_files.add(self.current_file)
             return Gst.PadProbeReturn.OK  # in case of training - iterate exactly once per image
         return Gst.PadProbeReturn.OK

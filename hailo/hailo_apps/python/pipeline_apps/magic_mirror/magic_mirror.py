@@ -1,6 +1,5 @@
 # region imports
 # Standard library imports
-import datetime
 from collections import deque
 from datetime import datetime
 import os
@@ -54,6 +53,31 @@ GESTURE_DIRECTION_CONSISTENCY = 0.75
 # switch fires a face_recognition action and clears gesture state - so unstable labels must not
 # get through. Any frame of the current label resets the challenger's count.
 FACE_STABLE_FRAMES = 10
+# Cap on per-track gesture state entries. Track IDs increase monotonically for
+# as long as the pipeline runs, so unpruned dicts keyed by them grow forever
+# on an always-on mirror. Oldest-inserted entries (stale tracks) are evicted.
+GESTURE_STATE_MAX_ENTRIES = 100
+
+# COCO pose keypoint indices as produced by the pose-estimation postprocess.
+COCO_KEYPOINTS = {
+    "nose": 0,
+    "left_eye": 1,
+    "right_eye": 2,
+    "left_ear": 3,
+    "right_ear": 4,
+    "left_shoulder": 5,
+    "right_shoulder": 6,
+    "left_elbow": 7,
+    "right_elbow": 8,
+    "left_wrist": 9,
+    "right_wrist": 10,
+    "left_hip": 11,
+    "right_hip": 12,
+    "left_knee": 13,
+    "right_knee": 14,
+    "left_ankle": 15,
+    "right_ankle": 16,
+}
 # endregion
 
 
@@ -128,6 +152,12 @@ class user_callbacks_class(app_callback_class):
         state_key = (track_id, wrist_name)
         history = self.gesture_tracks.setdefault(state_key, deque(maxlen=GESTURE_HISTORY_LENGTH))
         history.append((current_frame, x, y))
+        # Evict state for stale tracks (insertion order == first-seen order,
+        # and old track IDs never come back) so 24/7 runs stay bounded.
+        while len(self.gesture_tracks) > GESTURE_STATE_MAX_ENTRIES:
+            self.gesture_tracks.pop(next(iter(self.gesture_tracks)))
+        while len(self.latest_gesture_frame) > GESTURE_STATE_MAX_ENTRIES:
+            self.latest_gesture_frame.pop(next(iter(self.latest_gesture_frame)))
 
         if len(history) < GESTURE_HISTORY_LENGTH:
             return None
@@ -186,7 +216,7 @@ def app_callback(element, buffer, user_data):
         hailo_logger.warning("Received None buffer.")
         return
     pad = element.get_static_pad("src")
-    format, width, height = get_caps_from_pad(pad)
+    fmt, width, height = get_caps_from_pad(pad)
     roi = hailo.get_roi_from_buffer(buffer)
     detections = roi.get_objects_typed(hailo.HAILO_DETECTION)
     for detection in detections:
@@ -225,14 +255,13 @@ def app_callback(element, buffer, user_data):
                 track_id = track[0].get_id()
 
             landmarks = detection.get_objects_typed(hailo.HAILO_LANDMARKS)
-            if not landmarks or not format or not width or not height:
+            if not landmarks or not fmt or not width or not height:
                 continue
 
             bbox = detection.get_bbox()
             points = landmarks[0].get_points()
-            keypoints = get_keypoints()
             for wrist_name in ("left_wrist", "right_wrist"):
-                point = points[keypoints[wrist_name]]
+                point = points[COCO_KEYPOINTS[wrist_name]]
                 x = int((point.x() * bbox.width() + bbox.xmin()) * width)
                 y = int((point.y() * bbox.height() + bbox.ymin()) * height)
                 gesture_name = user_data.update_gesture(
@@ -260,28 +289,6 @@ def app_callback(element, buffer, user_data):
                     confidence=confidence,
                 )
     return
-
-
-def get_keypoints():
-    return {
-        "nose": 0,
-        "left_eye": 1,
-        "right_eye": 2,
-        "left_ear": 3,
-        "right_ear": 4,
-        "left_shoulder": 5,
-        "right_shoulder": 6,
-        "left_elbow": 7,
-        "right_elbow": 8,
-        "left_wrist": 9,
-        "right_wrist": 10,
-        "left_hip": 11,
-        "right_hip": 12,
-        "left_knee": 13,
-        "right_knee": 14,
-        "left_ankle": 15,
-        "right_ankle": 16,
-    }
 
 
 def main():

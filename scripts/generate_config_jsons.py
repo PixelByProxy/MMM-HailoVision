@@ -121,8 +121,17 @@ def build_apps_json(cfg: dict) -> dict:
 
                     entry["arch"].add(arch)
 
-                    src = model["source"]
-                    entry["source"] = SOURCE_MAP.get(src, src)
+                    src = SOURCE_MAP.get(model["source"], model["source"])
+                    if entry["source"] is None:
+                        entry["source"] = src
+                    elif entry["source"] != src:
+                        # apps.json holds one source per model; keep the first
+                        # and surface the conflict instead of silently letting
+                        # the last arch win.
+                        print(
+                            f"[WARN] model {model_name}: conflicting sources "
+                            f"'{entry['source']}' vs '{src}' ({arch}); keeping '{entry['source']}'"
+                        )
 
                     if "url" in model:
                         hef = Path(model["url"]).name
@@ -151,7 +160,7 @@ def build_apps_json(cfg: dict) -> dict:
 
 def main():
     if len(sys.argv) != 2:
-        print("Usage: generate_jsons.py <resources_config.yaml>")
+        print("Usage: generate_config_jsons.py <resources_config.yaml>")
         sys.exit(1)
 
     yaml_path = Path(sys.argv[1])

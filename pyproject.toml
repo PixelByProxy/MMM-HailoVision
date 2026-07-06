@@ -42,10 +42,13 @@ dev = [
     "pytest-timeout>=2.0.0",
 ]
 
+# This is a fork of hailo-ai/hailo-apps stripped down to the magic_mirror app.
+# The distribution name stays "hailo-apps" (the bundled sanity tests check pip
+# for it), but issues belong on the fork, not upstream.
 [project.urls]
-Homepage = "https://github.com/hailo-ai/hailo-apps"
-Repository = "https://github.com/hailo-ai/hailo-apps"
-Issues = "https://github.com/hailo-ai/hailo-apps/issues"
+Homepage = "https://github.com/PixelByProxy/MMM-HailoVision"
+Repository = "https://github.com/PixelByProxy/MMM-HailoVision"
+Issues = "https://github.com/PixelByProxy/MMM-HailoVision/issues"
 
 [project.scripts]
 get-usb-camera =            "hailo_apps.python.core.common.camera_utils:main"

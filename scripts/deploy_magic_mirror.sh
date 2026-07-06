@@ -8,8 +8,8 @@
 #   1. Re-injects the module block from config.example.js (at the repo root)
 #      into MagicMirror's config/config.js, replacing any block injected by a
 #      previous run (other modules in the config are left untouched).
-#   2. If MagicMirror is currently running, it is stopped and (when it was
-#      running) restarted so it picks up the new config.
+#   2. Stops MagicMirror if it is running, then starts it (the default is to
+#      always start it after the deploy; use --no-restart to skip).
 #
 # Usage:
 #   scripts/deploy_magic_mirror.sh [MM_DIR]
@@ -189,9 +189,13 @@ if command -v node &>/dev/null; then
     fi
 fi
 
-cp "$CONFIG_FILE" "$CONFIG_FILE.deploy.bak"
+# Keep the FIRST backup: after a second deploy the config already contains a
+# managed block, so overwriting the backup would lose the user's original.
+if [[ ! -f "$CONFIG_FILE.deploy.bak" ]]; then
+    cp "$CONFIG_FILE" "$CONFIG_FILE.deploy.bak"
+    echo "💾 Backed up original config to: $CONFIG_FILE.deploy.bak"
+fi
 cp "$NEWCONF" "$CONFIG_FILE"
-echo "💾 Backed up previous config to: $CONFIG_FILE.deploy.bak"
 
 # --- 2. (Re)start MagicMirror -----------------------------------------------
 case "$RESTART_MODE" in

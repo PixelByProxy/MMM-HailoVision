@@ -58,8 +58,6 @@ class MagicMirrorHandler:
         payload = {"action": action, "face": face if face else "*"}
         if confidence is not None:
             payload["confidence"] = round(float(confidence), 3)
-        if self.api_token:
-            payload["token"] = self.api_token
 
         try:
             self._queue.put_nowait(payload)
