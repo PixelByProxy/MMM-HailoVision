@@ -5,8 +5,6 @@ import shutil
 import json
 import sys
 import time
-import threading
-import queue
 import uuid
 import setproctitle
 from pathlib import Path
@@ -22,6 +20,8 @@ from PIL import Image
 # Local application-specific imports
 import hailo
 from hailo import HailoTracker
+from hailo_apps.python.core.common.background_worker import BackgroundWorker
+from hailo_apps.python.core.common.bounded_lru import BoundedLruDict
 from hailo_apps.python.core.common.db_handler import DatabaseHandler, Record
 from hailo_apps.python.core.common.core import (
     get_pipeline_parser,
@@ -55,6 +55,7 @@ from hailo_apps.python.core.common.defines import (
     BASIC_PIPELINES_VIDEO_EXAMPLE_NAME,
     SCRFD_10G_POSTPROCESS_FUNCTION,
     SCRFD_2_5G_POSTPROCESS_FUNCTION,
+    IMAGE_EXTENSIONS,
     HAILO8_ARCH,
     HAILO10H_ARCH,
     HAILO8L_ARCH
@@ -67,7 +68,9 @@ hailo_logger = get_logger(__name__)
 
 # Files in a person's training folder that are fed to the pipeline; anything
 # else (stray .DS_Store, READMEs, ...) is skipped instead of aborting the run.
-TRAIN_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+# Derived from the shared project-wide policy so it can't drift; webp is
+# additionally accepted here because decodebin handles it fine for training.
+TRAIN_IMAGE_EXTENSIONS = set(IMAGE_EXTENSIONS) | {".webp"}
 
 class GStreamerMagicMirrorApp(GStreamerApp):
     # Cap on track_id_frame_count entries; stale track IDs are evicted (see
@@ -193,35 +196,13 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         # run_training(); don't create one here. At this point self.current_file
         # is still None, so a pipeline built now would be a junk
         # 'multifilesrc location=None' that holds a vdevice and is never used.
-        self.track_id_frame_count = {}  # Dictionary to track frame counts for each track ID - avoid processing first frames since usually they are blurry since person just entered the frame
+        # Per-track frame counters (LRU-bounded) - avoid processing first frames since usually they are blurry since person just entered the frame
+        self.track_id_frame_count = BoundedLruDict(self.TRACK_STATE_MAX_ENTRIES)
         self.tracker = HailoTracker.get_instance()  # tracker object
 
-        # region worker queue threads for saving images
-        # Create a queue to hold the tasks
-        self.task_queue = queue.Queue()
+        # Saves training sample images off the buffer-callback thread.
+        self.image_saver = BackgroundWorker(name="image-saver")
 
-        def worker():
-            while True:  # while pipeline playing
-                task = self.task_queue.get()
-                if task is None:  # Exit signal
-                    break
-
-                # Check the task type and process accordingly
-                if task['type'] == 'save_image':
-                    frame, image_path = task['frame'], task['image_path']
-                    self.save_image_file(frame, image_path)
-                self.task_queue.task_done()
-
-        # Start worker threads
-        self.num_worker_threads = 1
-        self.threads = []
-        for i in range(self.num_worker_threads):
-            t = threading.Thread(target=worker)
-            t.daemon = True
-            t.start()
-            self.threads.append(t)
-        # endregion
-        
     def get_pipeline_string(self):
         source_pipeline = self.get_source_pipeline()
         pose_pipeline_wrapper = ""
@@ -303,7 +284,7 @@ class GStreamerMagicMirrorApp(GStreamerApp):
             print(f"Processing person: {person_name}")
             for image_file in os.listdir(person_folder):
                 if os.path.splitext(image_file)[1].lower() not in TRAIN_IMAGE_EXTENSIONS:
-                    print(f"Skipping non-image file: {image_file}")
+                    hailo_logger.info(f"Skipping non-image file: {image_file}")
                     continue
                 print(f"Processing image: {image_file}")
                 self.current_file = os.path.join(person_folder, image_file)
@@ -361,17 +342,6 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         # Crop the frame to the detection area
         return frame[y_min:y_max, x_min:x_max]
 
-    def add_task(self, task_type, **kwargs):
-        """
-        Add a task to the queue.
-
-        Args:
-            task_type (str): The type of task (e.g., 'save_image').
-            kwargs: Additional arguments for the task.
-        """
-        task = {'type': task_type, **kwargs}
-        self.task_queue.put(task)
-
     def vector_db_callback(self, pad, info, user_data):
         tracker_names = self.tracker.get_trackers_list()
         if not tracker_names:
@@ -396,7 +366,16 @@ class GStreamerMagicMirrorApp(GStreamerApp):
             if len(embedding) == 0:
                 continue  # if cropper pipeline element decided to pass the detection - it will arrive to this stage of the pipeline without face embedding
             if len(embedding) > 1:
-                print(f"Warning: Multiple embeddings found for track ID {track_id}. Skipping this detection.")
+                # Anomalous: exactly one embedding is expected. Remove them
+                # all so the detection can't get stuck permanently >1 (the
+                # tracker keeps past metadata, so leftovers would otherwise
+                # persist and this detection would never be classified) and
+                # classify on a fresh embedding next frame.
+                hailo_logger.warning(
+                    f"Multiple embeddings found for track ID {track_id}; discarding them and skipping this frame."
+                )
+                for matrix in embedding:
+                    detection.remove_object(matrix)
                 continue
             embedding_vector = np.array(embedding[0].get_data())
             person = self.db_handler.search_record(embedding=embedding_vector)  # most time consuming operation - search the database for the person with the closest embedding
@@ -413,11 +392,6 @@ class GStreamerMagicMirrorApp(GStreamerApp):
             
             # anyway re-process for "double-check" after self.skip_frames X 3
             self.track_id_frame_count[track_id] = -3 * self.skip_frames
-
-        # Track IDs increase monotonically forever on an always-on mirror, so
-        # evict the oldest-inserted (stale) entries to keep memory bounded.
-        while len(self.track_id_frame_count) > self.TRACK_STATE_MAX_ENTRIES:
-            self.track_id_frame_count.pop(next(iter(self.track_id_frame_count)))
 
         return Gst.PadProbeReturn.OK
     
@@ -445,7 +419,7 @@ class GStreamerMagicMirrorApp(GStreamerApp):
             detection.remove_object(embedding[0])  # in case the detection pointer tracker pipeline element (from earlier side of the pipeline) holds is the same as the one we have, remove the embedding, so embedding similarity won't be part of the decision criteria
             cropped_frame = self.crop_frame(frame, detection.get_bbox(), width, height)
             image_path = os.path.join(self.samples_dir, f"{uuid.uuid4()}.jpeg")
-            self.add_task('save_image', frame=cropped_frame, image_path=image_path)
+            self.image_saver.submit(self.save_image_file, cropped_frame, image_path)
             name = os.path.basename(os.path.dirname(self.current_file))
             if name in self.processed_names:
                 self.db_handler.insert_new_sample(record=self.db_handler.get_record_by_id(self.processed_names[name]), embedding=embedding_vector, sample=image_path, timestamp=int(time.time()))

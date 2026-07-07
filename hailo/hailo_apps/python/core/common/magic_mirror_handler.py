@@ -1,11 +1,10 @@
 # region imports
 # Standard library imports
 import json
-import queue
-import threading
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from hailo_apps.python.core.common.background_worker import BackgroundWorker
 from hailo_apps.python.core.common.hailo_logger import get_logger
 
 # endregion imports
@@ -38,12 +37,10 @@ class MagicMirrorHandler:
         # send_action() is called from the GStreamer buffer callback, where a
         # synchronous HTTP round-trip (up to the full socket timeout when
         # MagicMirror is down) would stall video processing. Actions are
-        # queued and POSTed by a single background daemon thread instead.
-        self._queue = queue.Queue(maxsize=self.QUEUE_MAX_ACTIONS)
-        self._sender = threading.Thread(
-            target=self._send_loop, name="magic-mirror-sender", daemon=True
+        # POSTed by a background worker thread instead.
+        self._sender = BackgroundWorker(
+            name="magic-mirror-sender", max_items=self.QUEUE_MAX_ACTIONS
         )
-        self._sender.start()
 
     def send_action(self, action, face=None, confidence=None):
         """Queue a recognized action/face for delivery to the MagicMirror module.
@@ -59,18 +56,10 @@ class MagicMirrorHandler:
         if confidence is not None:
             payload["confidence"] = round(float(confidence), 3)
 
-        try:
-            self._queue.put_nowait(payload)
-        except queue.Full:
+        if not self._sender.submit(self._post, payload):
             hailo_logger.warning(
                 f"MagicMirror action queue full; dropping action '{action}'"
             )
-
-    def _send_loop(self):
-        while True:
-            payload = self._queue.get()
-            self._post(payload)
-            self._queue.task_done()
 
     def _post(self, payload):
         data = json.dumps(payload).encode("utf-8")

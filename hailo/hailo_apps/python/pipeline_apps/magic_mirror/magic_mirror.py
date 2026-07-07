@@ -1,5 +1,6 @@
 # region imports
 # Standard library imports
+import time
 from collections import deque
 from datetime import datetime
 import os
@@ -12,6 +13,7 @@ from gi.repository import Gst
 
 # Local application-specific imports
 import hailo
+from hailo_apps.python.core.common.bounded_lru import BoundedLruDict
 from hailo_apps.python.core.common.buffer_utils import get_caps_from_pad
 from hailo_apps.python.core.common.hailo_logger import get_logger
 from hailo_apps.python.core.common.magic_mirror_handler import MagicMirrorHandler
@@ -48,14 +50,22 @@ GESTURE_SMOOTHING_SAMPLES = 3
 # Fraction of total horizontal travel that must be in the dominant direction for a clean swipe
 # (rejects back-and-forth waves and noisy jitter that net out to a false direction).
 GESTURE_DIRECTION_CONSISTENCY = 0.75
-# Consecutive classifications a NEW person label must persist before we accept the switch.
-# Recognition confidence flickers around the threshold (Alice <-> Unknown), and every accepted
-# switch fires a face_recognition action and clears gesture state - so unstable labels must not
-# get through. Any frame of the current label resets the challenger's count.
+# Consecutive classifications a NEW person label must persist on the SAME face
+# track before we accept it. Recognition confidence flickers around the
+# threshold (Alice <-> Unknown), and every accepted switch fires a
+# face_recognition action - so unstable labels must not get through. Debounce
+# is per face track: with two people in frame, each face accumulates its own
+# count and neither resets the other's.
 FACE_STABLE_FRAMES = 10
-# Cap on per-track gesture state entries. Track IDs increase monotonically for
-# as long as the pipeline runs, so unpruned dicts keyed by them grow forever
-# on an always-on mirror. Oldest-inserted entries (stale tracks) are evicted.
+# A recognized label fires face_recognition only when the person stabilizes
+# after being UNSEEN for at least this long. The tracker keeps lost tracks for
+# just a few frames, so occlusion or walking past re-issues track IDs for the
+# same person every few seconds - without this refractory window, each new
+# track would re-fire the person's action (re-greeting spam).
+FACE_REFIRE_ABSENCE_SECONDS = 30
+# Cap on per-track state entries (gesture history, recognized labels). Track
+# IDs increase monotonically for as long as the pipeline runs, so unbounded
+# dicts keyed by them grow forever on an always-on mirror.
 GESTURE_STATE_MAX_ENTRIES = 100
 
 # COCO pose keypoint indices as produced by the pose-estimation postprocess.
@@ -86,11 +96,17 @@ class user_callbacks_class(app_callback_class):
         super().__init__()
         self.frame = None
         self.latest_track_id = -1
-        self.gesture_tracks = {}
-        self.latest_gesture_frame = {}
+        self.gesture_tracks = BoundedLruDict(GESTURE_STATE_MAX_ENTRIES)
+        self.latest_gesture_frame = BoundedLruDict(GESTURE_STATE_MAX_ENTRIES)
+        # Label gestures are tagged with: the most recently stabilized face.
         self.current_person_label = None
-        self.candidate_person_label = None
-        self.candidate_person_frames = 0
+        # Per face-track recognition state: track_id -> stable label, and
+        # track_id -> (challenger label, consecutive sightings).
+        self.track_person_labels = BoundedLruDict(GESTURE_STATE_MAX_ENTRIES)
+        self.track_person_candidates = BoundedLruDict(GESTURE_STATE_MAX_ENTRIES)
+        # label -> monotonic time the label was last confirmed on any track;
+        # drives the FACE_REFIRE_ABSENCE_SECONDS refractory window.
+        self.label_last_seen = BoundedLruDict(GESTURE_STATE_MAX_ENTRIES)
 
         # MagicMirror settings as instance attributes
         self.magic_mirror_enabled = MAGIC_MIRROR_ENABLED
@@ -109,35 +125,54 @@ class user_callbacks_class(app_callback_class):
         if self.magic_mirror_enabled and self.magic_mirror_handler:
             self.magic_mirror_handler.send_action(action=action, face=face, confidence=confidence)
 
-    def update_current_person(self, person_label):
+    def update_current_person(self, track_id, person_label):
         """
-        Reset gesture state when face recognition switches to a different person.
+        Debounced, per face track: accept a label for this track only after it
+        has been seen FACE_STABLE_FRAMES consecutive times, so confidence
+        flicker around the recognition threshold doesn't re-fire actions.
+        Tracks are independent - with two people in frame, each face
+        accumulates its own count and neither resets the other's (a single
+        global challenger would starve every person after the first).
 
-        A switch is only accepted after the new label has been seen for
-        FACE_STABLE_FRAMES consecutive classifications, so confidence flicker
-        around the recognition threshold doesn't re-fire actions or wipe
-        gesture history.
-
-        Returns True when the recognized person changed (a new, stable face),
-        so the caller can forward a one-shot ``face_recognition`` action.
+        Returns True when a person is newly recognized: their label
+        stabilized on a track AND they were unseen on every track for at
+        least FACE_REFIRE_ABSENCE_SECONDS. The absence window is what stops
+        tracker ID churn (occlusion re-issues track IDs for the same person
+        within seconds) from re-firing the action for someone who never left.
+        Only a fired (newly recognized) label becomes
+        ``current_person_label`` (used to tag gestures) and resets gesture
+        state so a swipe can't span two people; a suppressed re-stabilization
+        is a pure presence-refresh with no side effects.
         """
-        if person_label == self.current_person_label:
-            # Current label re-confirmed; any challenger was just flicker.
-            self.candidate_person_label = None
-            self.candidate_person_frames = 0
+        if person_label == self.track_person_labels.get(track_id):
+            # Label re-confirmed for this track; any challenger was flicker.
+            # Refresh presence so a track-ID churn right after this doesn't
+            # look like the person returning from an absence.
+            self.label_last_seen[person_label] = time.monotonic()
+            self.track_person_candidates.pop(track_id, None)
             return False
-        if person_label != self.candidate_person_label:
-            self.candidate_person_label = person_label
-            self.candidate_person_frames = 1
+        candidate = self.track_person_candidates.get(track_id)
+        if candidate is None or candidate[0] != person_label:
+            self.track_person_candidates[track_id] = (person_label, 1)
             return False
-        self.candidate_person_frames += 1
-        if self.candidate_person_frames < FACE_STABLE_FRAMES:
+        sightings = candidate[1] + 1
+        if sightings < FACE_STABLE_FRAMES:
+            self.track_person_candidates[track_id] = (person_label, sightings)
             return False
-        self.current_person_label = person_label
-        self.candidate_person_label = None
-        self.candidate_person_frames = 0
-        self.gesture_tracks.clear()
-        self.latest_gesture_frame.clear()
+        self.track_person_candidates.pop(track_id, None)
+        self.track_person_labels[track_id] = person_label
+        now = time.monotonic()
+        last_seen = self.label_last_seen.get(person_label)
+        self.label_last_seen[person_label] = now
+        if last_seen is not None and (now - last_seen) < FACE_REFIRE_ABSENCE_SECONDS:
+            # Same person re-stabilized after tracker ID churn: they never
+            # left the scene, so don't retag gestures with their label or
+            # wipe someone else's in-progress gesture history.
+            return False
+        if person_label != self.current_person_label:
+            self.current_person_label = person_label
+            self.gesture_tracks.clear()
+            self.latest_gesture_frame.clear()
         return True
 
     def update_gesture(self, track_id, wrist_name, x, y, bbox_width, bbox_height):
@@ -152,12 +187,6 @@ class user_callbacks_class(app_callback_class):
         state_key = (track_id, wrist_name)
         history = self.gesture_tracks.setdefault(state_key, deque(maxlen=GESTURE_HISTORY_LENGTH))
         history.append((current_frame, x, y))
-        # Evict state for stale tracks (insertion order == first-seen order,
-        # and old track IDs never come back) so 24/7 runs stay bounded.
-        while len(self.gesture_tracks) > GESTURE_STATE_MAX_ENTRIES:
-            self.gesture_tracks.pop(next(iter(self.gesture_tracks)))
-        while len(self.latest_gesture_frame) > GESTURE_STATE_MAX_ENTRIES:
-            self.latest_gesture_frame.pop(next(iter(self.latest_gesture_frame)))
 
         if len(history) < GESTURE_HISTORY_LENGTH:
             return None
@@ -232,7 +261,7 @@ def app_callback(element, buffer, user_data):
             if len(classifications) > 0:
                 for classification in classifications:
                     person_label = classification.get_label()
-                    person_changed = user_data.update_current_person(person_label)
+                    person_changed = user_data.update_current_person(track_id, person_label)
                     if person_label == 'Unknown':
                         string_to_print += 'Unknown person detected'
                     else:

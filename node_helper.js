@@ -132,18 +132,23 @@ module.exports = NodeHelper.create({
       return res.status(400).json({ ok: false, error: "missing 'action'" });
     }
 
-    const handler = this.resolveHandler(action, face);
-    if (!handler) {
+    const resolved = this.resolveHandler(action, face);
+    if (!resolved) {
       Log.info(`${this.name}: no handler configured for action='${action}' face='${face}'`);
       return res.json({ ok: true, matched: false, action, face });
     }
+    const handler = resolved.handler;
 
     // Rate limit: a flood of identical events (rapid repeated swipes, a
     // flapping recognition) would otherwise become a notification/shell-exec
-    // flood. Mirrors the pipeline's own gesture cooldown, server-side.
+    // flood. Keyed by the MATCHED handler (action + config face key), never
+    // by the raw network-supplied face: raw-face keys would let unique face
+    // strings both bypass the cooldown and grow the map without bound, since
+    // wildcard matches accept any face. Handler keys come from the config,
+    // so the map stays bounded by the config's size.
     const cooldownMs = Number(this.config.actionCooldownMs) || 0;
     if (cooldownMs > 0) {
-      const key = JSON.stringify([action, face]);
+      const key = JSON.stringify([action, resolved.faceKey]);
       const now = Date.now();
       const last = this.lastActionTime.get(key) || 0;
       if (now - last < cooldownMs) {
@@ -174,6 +179,8 @@ module.exports = NodeHelper.create({
   },
 
   // Resolve actions[action][face], falling back to actions[action]["*"].
+  // Returns { handler, faceKey } where faceKey is the CONFIG key that
+  // matched (the exact face or "*") — callers key rate-limit state on it.
   resolveHandler(action, face) {
     const actions = this.config.actions || {};
     const forAction = actions[action];
@@ -181,10 +188,10 @@ module.exports = NodeHelper.create({
       return null;
     }
     if (Object.prototype.hasOwnProperty.call(forAction, face)) {
-      return forAction[face];
+      return { handler: forAction[face], faceKey: face };
     }
     if (Object.prototype.hasOwnProperty.call(forAction, "*")) {
-      return forAction["*"];
+      return { handler: forAction["*"], faceKey: "*" };
     }
     return null;
   },
@@ -353,6 +360,17 @@ module.exports = NodeHelper.create({
     child.stdout.on("data", (data) => Log.info(`[hailo] ${data.toString().trim()}`));
     child.stderr.on("data", (data) => Log.warn(`[hailo] ${data.toString().trim()}`));
 
+    // A spawn failure can emit BOTH "error" and "exit"; schedule (and double
+    // the backoff) only once per child, whichever event arrives first.
+    let restartScheduled = false;
+    const scheduleOnce = () => {
+      if (restartScheduled) {
+        return;
+      }
+      restartScheduled = true;
+      this.scheduleRestart();
+    };
+
     child.on("exit", (code, signal) => {
       Log.warn(`${this.name}: Hailo pipeline exited (code=${code} signal=${signal})`);
       this.hailoProcess = null;
@@ -361,14 +379,14 @@ module.exports = NodeHelper.create({
       if (Date.now() - this.lastSpawnTime >= HAILO_STABLE_RUN_MS) {
         this.restartDelay = HAILO_RESTART_DELAY_MS;
       }
-      this.scheduleRestart();
+      scheduleOnce();
     });
 
     child.on("error", (err) => {
       Log.error(`${this.name}: failed to start Hailo pipeline: ${err.message}`);
       this.hailoProcess = null;
       this.sendSocketNotification("HAILO_STATUS", { status: "pipeline error" });
-      this.scheduleRestart();
+      scheduleOnce();
     });
   },
 
