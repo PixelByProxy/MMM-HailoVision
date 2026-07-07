@@ -24,17 +24,25 @@
 
     // action -> face -> { notification, payload, shell }
     actions: {
-      // Swipe gestures page through MagicMirror's pages (works with the
-      // MMM-pages module). "*" matches any recognized person.
+      // actions[action][face] = { notification, payload, shell }
+      //   action: "face_recognition" | "swipe_left" | "swipe_right" (or custom)
+      //   face:   recognized person label, or "*" to match any face.
+      // Each handler may define:
+      //   notification: a MagicMirror notification to broadcast (sendNotification)
+      //   payload:      payload object for that notification
+      //   shell:        a shell command string to execute on the host
       swipe_left: {
-        "*": { notification: "PAGE_INCREMENT" }
+        "*": {
+          notification: "SHOW_ALERT",
+          payload: { title: "Swipe", message: "Left!", timer: 4000 }
+        }
       },
       swipe_right: {
-        "*": { notification: "PAGE_DECREMENT" }
+        "*": {
+          notification: "SHOW_ALERT",
+          payload: { title: "Swipe", message: "Right!", timer: 4000 }
+        }
       },
-
-      // Face recognition: greet known people, run a command for a specific
-      // person, and fall back for anyone else.
       face_recognition: {
         Alice: {
           notification: "SHOW_ALERT",
