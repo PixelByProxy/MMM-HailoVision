@@ -14,10 +14,10 @@
 Module.register("MMM-HailoVision", {
   // Default module configuration.
   defaults: {
-    // ---- REST API ----
     // Path the REST endpoint is mounted on. The full URL the Python pipeline
     // must POST to is:  http://<mirror-host>:<mm-port>/<apiPath>
     apiPath: "MMM-HailoVision/action",
+
     // Optional shared secret. If set, incoming requests must send the same
     // value in the "X-Hailo-Token" header.
     apiToken: "",
@@ -37,10 +37,16 @@ Module.register("MMM-HailoVision", {
     //   shell:        a shell command string to execute on the host
     actions: {
       swipe_left: {
-        "*": { notification: "PAGE_INCREMENT" }
+        "*": {
+          notification: "SHOW_ALERT",
+          payload: { title: "Magic Mirror", message: "Swipe Left!", timer: 4000 }
+        }
       },
       swipe_right: {
-        "*": { notification: "PAGE_DECREMENT" }
+        "*": {
+          notification: "SHOW_ALERT",
+          payload: { title: "Magic Mirror", message: "Swipe Right!", timer: 4000 }
+        }
       },
       face_recognition: {
         "*": {
@@ -55,13 +61,15 @@ Module.register("MMM-HailoVision", {
     // launch command itself is fixed inside node_helper and is not
     // configurable.
     launchHailoApp: true,
+
     // Camera source for the pipeline: "usb" (USB webcam, auto-detected) or
     // "rpi" (Raspberry Pi camera). Leave empty/undefined to omit --input, in
     // which case the pipeline uses its bundled test video.
     cameraInputMode: "",
-    // Directory the pipeline reads face-training images from (one subfolder
-    // per person). Exported to the pipeline as HAILO_MAGIC_MIRROR_TRAIN_DIR.
-    // Leave empty to use the bundled default (<module>/hailo/.../magic_mirror/train).
+
+    // Directory with face-training images (one subfolder per person, e.g.
+    // trainingDir: "/home/pi/faces" containing faces/Alice/*.jpg). Leave
+    // empty to use the bundled default inside the module.
     trainingDir: "",
 
     // Show a small status line in the module region.

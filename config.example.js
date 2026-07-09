@@ -11,50 +11,39 @@
   module: "MMM-HailoVision",
   position: "bottom_left",
   config: {
-    // REST endpoint the Hailo Python pipeline POSTs to. Reachable at
-    //   http://<mirror-host>:<mm-port>/MMM-HailoVision/action
-    apiPath: "MMM-HailoVision/action",
-    // Optional shared secret (also set HAILO_MAGIC_MIRROR_API_TOKEN on the
-    // Python side, which the launcher injects automatically). Sent in the
-    // "X-Hailo-Token" request header.
-    apiToken: "",
-    // Minimum ms between two executions of the same (action, face) handler;
-    // 0 disables rate limiting.
-    actionCooldownMs: 500,
-
-    // action -> face -> { notification, payload, shell }
+    // ---- Action mapping ----
+    // actions[action][face] = { notification, payload, shell }
+    //   action: "face_recognition" | "swipe_left" | "swipe_right" (or custom)
+    //   face:   recognized person label, or "*" to match any face.
+    // Each handler may define:
+    //   notification: a MagicMirror notification to broadcast (sendNotification)
+    //   payload:      payload object for that notification
+    //   shell:        a shell command string to execute on the host
     actions: {
-      // actions[action][face] = { notification, payload, shell }
-      //   action: "face_recognition" | "swipe_left" | "swipe_right" (or custom)
-      //   face:   recognized person label, or "*" to match any face.
-      // Each handler may define:
-      //   notification: a MagicMirror notification to broadcast (sendNotification)
-      //   payload:      payload object for that notification
-      //   shell:        a shell command string to execute on the host
       swipe_left: {
         "*": {
           notification: "SHOW_ALERT",
-          payload: { title: "Swipe", message: "Left!", timer: 4000 }
+          payload: { title: "Magic Mirror", message: "Swipe Left!", timer: 4000 }
         }
       },
       swipe_right: {
         "*": {
           notification: "SHOW_ALERT",
-          payload: { title: "Swipe", message: "Right!", timer: 4000 }
+          payload: { title: "Magic Mirror", message: "Swipe Right!", timer: 4000 }
         }
       },
       face_recognition: {
         Alice: {
           notification: "SHOW_ALERT",
-          payload: { title: "Welcome back", message: "Hi Alice!", timer: 4000 }
+          payload: { title: "Magic Mirror", message: "Hi Alice!", timer: 4000 }
         },
         Anna: {
           notification: "SHOW_ALERT",
-          payload: { title: "Welcome back", message: "Hi Anna!", timer: 4000 }
+          payload: { title: "Magic Mirror", message: "Hi Anna!", timer: 4000 }
         },
         Bob: {
           notification: "SHOW_ALERT",
-          payload: { title: "Welcome back", message: "Hi Bob!", timer: 4000 }
+          payload: { title: "Magic Mirror", message: "Hi Bob!", timer: 4000 }
         },
         Unknown: {
           notification: "SHOW_ALERT",
@@ -67,8 +56,6 @@
       }
     },
 
-    launchHailoApp: true,
-
     // Camera source for the pipeline: "usb" (USB webcam, auto-detected) or
     // "rpi" (Raspberry Pi camera). Leave empty/undefined to omit --input, in
     // which case the pipeline uses its bundled test video.
@@ -77,8 +64,6 @@
     // Directory with face-training images (one subfolder per person, e.g.
     // trainingDir: "/home/pi/faces" containing faces/Alice/*.jpg). Leave
     // empty to use the bundled default inside the module.
-    trainingDir: "",
-
-    showStatus: true
+    trainingDir: ""
   }
 }
