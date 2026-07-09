@@ -51,14 +51,13 @@ Add a module block to your MagicMirror `config/config.js`. See
 
 | Option | Default | Description |
 |---|---|---|
-| `apiPath` | `MMM-HailoVision/action` | Path the REST endpoint is mounted on. |
 | `apiToken` | `""` | Optional shared secret. When set, requests must send it in the `X-Hailo-Token` header. |
 | `actionCooldownMs` | `500` | Minimum milliseconds between two executions of the same `(action, face)` handler; repeated events inside the window are acknowledged but not acted on. `0` disables rate limiting. |
 | `actions` | see below | `action → face → handler` map. |
-| `launchHailoApp` | `true` | Launch the Hailo Python pipeline on startup. |
 | `cameraInputMode` | `""` | Camera source for the pipeline: `"usb"` (USB webcam, auto-detected) or `"rpi"` (Raspberry Pi camera). Empty/undefined omits `--input`, so the pipeline uses its bundled test video. |
-| `trainingDir` | `""` | Directory of face-training images (one subfolder per person). Forwarded to the pipeline as the `HAILO_MAGIC_MIRROR_TRAIN_DIR` env var. Empty uses the bundled default inside the module. |
+| `launchHailoApp` | `true` | Launch the Hailo Python pipeline on startup. |
 | `showStatus` | `true` | Show a small status line in the module region. |
+| `trainingDir` | `""` | Directory of face-training images (one subfolder per person). Forwarded to the pipeline as the `HAILO_MAGIC_MIRROR_TRAIN_DIR` env var. Empty uses the bundled default inside the module. |
 
 ### The `actions` map
 
@@ -100,10 +99,10 @@ those variables manually (see the magic_mirror app README).
 
 ## REST API
 
-`POST /<apiPath>`
+`POST /MMM-HailoVision/action`
 
 ```json
-{ "action": "swipe_left", "face": "Ryan", "confidence": 0.92 }
+{ "action": "swipe_left", "face": "Alice", "confidence": 0.92 }
 ```
 
 Response: `{ "ok": true, "matched": true, "action": "...", "face": "..." }`.

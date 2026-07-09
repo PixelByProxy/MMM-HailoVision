@@ -14,10 +14,6 @@
 Module.register("MMM-HailoVision", {
   // Default module configuration.
   defaults: {
-    // Path the REST endpoint is mounted on. The full URL the Python pipeline
-    // must POST to is:  http://<mirror-host>:<mm-port>/<apiPath>
-    apiPath: "MMM-HailoVision/action",
-
     // Optional shared secret. If set, incoming requests must send the same
     // value in the "X-Hailo-Token" header.
     apiToken: "",
@@ -56,24 +52,24 @@ Module.register("MMM-HailoVision", {
       }
     },
 
+    // Camera source for the pipeline: "usb" (USB webcam, auto-detected) or
+    // "rpi" (Raspberry Pi camera). Leave empty/undefined to omit --input, in
+    // which case the pipeline uses its bundled test video.
+    cameraInputMode: "",
+
     // ---- Hailo pipeline launcher ----
     // When enabled, node_helper spawns the Python pipeline on startup. The
     // launch command itself is fixed inside node_helper and is not
     // configurable.
     launchHailoApp: true,
 
-    // Camera source for the pipeline: "usb" (USB webcam, auto-detected) or
-    // "rpi" (Raspberry Pi camera). Leave empty/undefined to omit --input, in
-    // which case the pipeline uses its bundled test video.
-    cameraInputMode: "",
+    // Show a small status line in the module region.
+    showStatus: false,
 
     // Directory with face-training images (one subfolder per person, e.g.
     // trainingDir: "/home/pi/faces" containing faces/Alice/*.jpg). Leave
     // empty to use the bundled default inside the module.
-    trainingDir: "",
-
-    // Show a small status line in the module region.
-    showStatus: false
+    trainingDir: ""
   },
 
   start() {

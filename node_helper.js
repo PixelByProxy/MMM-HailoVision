@@ -35,6 +35,10 @@ const HAILO_STABLE_RUN_MS = 60 * 1000;
 // config can select the camera source but not inject arbitrary arguments.
 const CAMERA_INPUT_MODES = ["usb", "rpi"];
 
+// Path the REST endpoint is mounted on. The Python pipeline POSTs to
+// http://<mirror-host>:<mm-port>/MMM-HailoVision/action
+const API_PATH = "/MMM-HailoVision/action";
+
 module.exports = NodeHelper.create({
   start() {
     this.config = null;
@@ -91,25 +95,23 @@ module.exports = NodeHelper.create({
     if (this.routeMounted) {
       return;
     }
-    const apiPath = "/" + String(this.config.apiPath || "MMM-HailoVision/action").replace(/^\/+/, "");
-
     // MagicMirror exposes a shared Express instance as this.expressApp.
     // MagicMirror core does NOT register a JSON body parser, so this
     // route-scoped parser is required for req.body to be populated.
     const express = require("express");
-    this.expressApp.use(apiPath, express.json());
+    this.expressApp.use(API_PATH, express.json());
 
-    this.expressApp.post(apiPath, (req, res) => {
+    this.expressApp.post(API_PATH, (req, res) => {
       this.handleActionRequest(req, res);
     });
 
     // Simple health check so the Python side can verify connectivity.
-    this.expressApp.get(apiPath, (req, res) => {
+    this.expressApp.get(API_PATH, (req, res) => {
       res.json({ ok: true, module: this.name });
     });
 
     this.routeMounted = true;
-    Log.info(`${this.name}: REST endpoint mounted at POST ${apiPath}`);
+    Log.info(`${this.name}: REST endpoint mounted at POST ${API_PATH}`);
   },
 
   handleActionRequest(req, res) {
@@ -217,9 +219,8 @@ module.exports = NodeHelper.create({
     // same host, so localhost is correct — only the port varies. Mirror
     // MagicMirror's own resolution order (js/server.js): MM_PORT env first,
     // then config.port (forwarded by the frontend as mmPort), then 8080.
-    const apiPath = String(this.config.apiPath || "MMM-HailoVision/action").replace(/^\/+/, "");
     const port = process.env.MM_PORT || this.config.mmPort || 8080;
-    return `http://localhost:${port}/${apiPath}`;
+    return `http://localhost:${port}${API_PATH}`;
   },
 
   launchHailoApp() {
