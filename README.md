@@ -15,9 +15,14 @@ to match the `action` string the pipeline sends.
 
 ## Prerequisites
 
-This module requires a Raspberry Pi with Hailo-powered AI hardware — either
-the Raspberry Pi AI HAT+ or the Raspberry Pi AI HAT+ 2. See the
-[Raspberry Pi AI documentation][rpi-ai] for more information on these boards.
+This module requires:
+
+- **A Raspberry Pi with Hailo-powered AI hardware** — either the Raspberry Pi
+  AI HAT+ or the Raspberry Pi AI HAT+ 2. See the
+  [Raspberry Pi AI documentation][rpi-ai] for more information.
+- **A camera** — either a Raspberry Pi camera or any other USB camera. See the
+  [Raspberry Pi camera documentation][rpi-camera] for more information on the
+  Raspberry Pi camera options.
 
 ## Installation
 
@@ -154,3 +159,4 @@ Response: `{ "ok": true, "matched": true, "action": "...", "face": "..." }`.
 [mm]: https://github.com/MagicMirrorOrg/MagicMirror
 [pages]: https://github.com/edward-shen/MMM-pages
 [rpi-ai]: https://www.raspberrypi.com/documentation/computers/ai.html
+[rpi-camera]: https://www.raspberrypi.com/documentation/accessories/camera.html
