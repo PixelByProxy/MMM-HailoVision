@@ -13,6 +13,12 @@ on the host. Supported actions out of the box: `face_recognition`,
 `swipe_left`, `swipe_right`. You can add any custom action key — it just has
 to match the `action` string the pipeline sends.
 
+## Prerequisites
+
+This module requires a Raspberry Pi with Hailo-powered AI hardware — either
+the Raspberry Pi AI HAT+ or the Raspberry Pi AI HAT+ 2. See the
+[Raspberry Pi AI documentation][rpi-ai] for more information on these boards.
+
 ## Installation
 
 In your terminal, go to your MagicMirror's module directory:
@@ -147,3 +153,4 @@ Response: `{ "ok": true, "matched": true, "action": "...", "face": "..." }`.
 
 [mm]: https://github.com/MagicMirrorOrg/MagicMirror
 [pages]: https://github.com/edward-shen/MMM-pages
+[rpi-ai]: https://www.raspberrypi.com/documentation/computers/ai.html
