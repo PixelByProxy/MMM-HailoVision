@@ -3,9 +3,9 @@
 ## Description
 
 This [MagicMirror²][mm] module lets your mirror react to what its camera sees,
-using Hailo-accelerated face recognition and gesture detection. Wave at your
-mirror to change pages, or have it greet you by name when it recognizes your
-face!
+using Hailo-accelerated face recognition and gesture detection. Swipe left or
+right in front of your mirror to change pages, or have it greet you by name
+when it recognizes your face!
 
 For each `(action, face)` pair you decide what happens: broadcast a
 MagicMirror notification (to control other modules) and/or run a shell command
