@@ -17,6 +17,8 @@ to match the `action` string the pipeline sends.
 
 This module requires:
 
+- **MagicMirror²** — an existing [MagicMirror²][mm] installation to add this
+  module to.
 - **A Raspberry Pi with Hailo-powered AI hardware** — either the Raspberry Pi
   AI HAT+ or the Raspberry Pi AI HAT+ 2. See the
   [Raspberry Pi AI documentation][rpi-ai] for more information.
