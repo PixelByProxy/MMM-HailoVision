@@ -29,29 +29,29 @@
       swipe_right: {
         "*": {
           notification: "SHOW_ALERT",
-          payload: { title: "Magic Mirror", message: "Swipe Right!", timer: 4000 }
+          payload: { title: "Hailo Vision", message: "Swipe Right!", timer: 4000 }
         }
       },
       face_recognition: {
         Alice: {
           notification: "SHOW_ALERT",
-          payload: { title: "Magic Mirror", message: "Hi Alice!", timer: 4000 }
+          payload: { title: "Hailo Vision", message: "Hi Alice!", timer: 4000 }
         },
         Anna: {
           notification: "SHOW_ALERT",
-          payload: { title: "Magic Mirror", message: "Hi Anna!", timer: 4000 }
+          payload: { title: "Hailo Vision", message: "Hi Anna!", timer: 4000 }
         },
         Bob: {
           notification: "SHOW_ALERT",
-          payload: { title: "Magic Mirror", message: "Hi Bob!", timer: 4000 }
+          payload: { title: "Hailo Vision", message: "Hi Bob!", timer: 4000 }
         },
         Unknown: {
           notification: "SHOW_ALERT",
-          payload: { title: "Magic Mirror", message: "Unknown person", timer: 3000 }
+          payload: { title: "Hailo Vision", message: "Unknown person", timer: 3000 }
         },
         "*": {
           // Example: run any host command when a face is recognized.
-          shell: "echo \"Hailo recognized $HAILO_FACE\""
+          shell: "echo \"Hailo Vision recognized $HAILO_FACE\""
         }
       }
     },

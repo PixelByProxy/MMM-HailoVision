@@ -39,19 +39,19 @@ Module.register("MMM-HailoVision", {
       swipe_left: {
         "*": {
           notification: "SHOW_ALERT",
-          payload: { title: "Magic Mirror", message: "Swipe Left!", timer: 4000 }
+          payload: { title: "Hailo Vision", message: "Swipe Left!", timer: 4000 }
         }
       },
       swipe_right: {
         "*": {
           notification: "SHOW_ALERT",
-          payload: { title: "Magic Mirror", message: "Swipe Right!", timer: 4000 }
+          payload: { title: "Hailo Vision", message: "Swipe Right!", timer: 4000 }
         }
       },
       face_recognition: {
         "*": {
           notification: "SHOW_ALERT",
-          payload: { title: "Magic Mirror", message: "Face detected" }
+          payload: { title: "Hailo Vision", message: "Face detected" }
         }
       }
     },
