@@ -14,10 +14,6 @@
 Module.register("MMM-HailoVision", {
   // Default module configuration.
   defaults: {
-    // Optional shared secret. If set, incoming requests must send the same
-    // value in the "X-Hailo-Token" header.
-    apiToken: "",
-
     // Minimum milliseconds between two executions of the same (action, face)
     // handler. Repeated events inside the window are acknowledged but not
     // acted on. 0 disables rate limiting.
@@ -51,6 +47,10 @@ Module.register("MMM-HailoVision", {
         }
       }
     },
+
+    // Optional shared secret. If set, incoming requests must send the same
+    // value in the "X-Hailo-Token" header.
+    apiToken: "",
 
     // Camera source for the pipeline: "usb" (USB webcam, auto-detected) or
     // "rpi" (Raspberry Pi camera). Leave empty/undefined to omit --input, in
