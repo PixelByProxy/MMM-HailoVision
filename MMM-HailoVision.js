@@ -73,7 +73,7 @@ Module.register("MMM-HailoVision", {
     trainingDir: "",
 
     // Show a small status line in the module region.
-    showStatus: true
+    showStatus: false
   },
 
   start() {

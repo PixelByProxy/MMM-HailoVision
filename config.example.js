@@ -9,7 +9,7 @@
  */
 {
   module: "MMM-HailoVision",
-  position: "bottom_left",
+  position: "bottom_right",
   config: {
     // ---- Action mapping ----
     // actions[action][face] = { notification, payload, shell }
