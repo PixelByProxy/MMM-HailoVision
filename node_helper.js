@@ -331,6 +331,17 @@ module.exports = NodeHelper.create({
     if (this.config.trainingDir) {
       env.HAILO_MAGIC_MIRROR_TRAIN_DIR = String(this.config.trainingDir);
     }
+    // Minimum confidences (0–1) the pipeline requires before it POSTs an
+    // action to this module — one for swipe gestures, one for face
+    // recognition. The pipeline defaults each to 0.7 when unset.
+    const minGestureConfidence = Number(this.config.minGestureConfidence);
+    if (Number.isFinite(minGestureConfidence)) {
+      env.HAILO_MAGIC_MIRROR_MIN_GESTURE_CONFIDENCE = String(minGestureConfidence);
+    }
+    const minFaceConfidence = Number(this.config.minFaceConfidence);
+    if (Number.isFinite(minFaceConfidence)) {
+      env.HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE = String(minFaceConfidence);
+    }
 
     // Tie the pipeline's lifetime to this host process at the kernel level:
     // setpriv sets PR_SET_PDEATHSIG so the OS sends the pipeline SIGTERM the

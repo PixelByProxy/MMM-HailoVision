@@ -35,11 +35,31 @@ def get_env_str(name, default=""):
     return os.getenv(name, default).strip()
 
 
+def get_env_float(name, default=0.0):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return float(value.strip())
+    except ValueError:
+        hailo_logger.warning(f"Invalid float for {name}: {value!r}; using default {default}.")
+        return default
+
+
 # region Constants
 # MagicMirror² module integration (MMM-HailoVision REST API).
 MAGIC_MIRROR_ENABLED = get_env_bool("HAILO_MAGIC_MIRROR_ENABLED", False)
 MAGIC_MIRROR_API_URL = get_env_str("HAILO_MAGIC_MIRROR_API_URL")
 MAGIC_MIRROR_API_TOKEN = get_env_str("HAILO_MAGIC_MIRROR_API_TOKEN")
+# Events below these confidences are logged locally but never forwarded to
+# the MagicMirror API. Gestures gate on the person-detection confidence,
+# face_recognition on the classification confidence.
+MAGIC_MIRROR_MIN_GESTURE_CONFIDENCE = get_env_float(
+    "HAILO_MAGIC_MIRROR_MIN_GESTURE_CONFIDENCE", 0.7
+)
+MAGIC_MIRROR_MIN_FACE_CONFIDENCE = get_env_float(
+    "HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE", 0.7
+)
 GESTURE_HISTORY_LENGTH = 12
 GESTURE_MIN_DELTA_RATIO = 0.35
 GESTURE_MIN_DELTA_PIXELS = 80
@@ -112,6 +132,8 @@ class user_callbacks_class(app_callback_class):
         self.magic_mirror_enabled = MAGIC_MIRROR_ENABLED
         self.magic_mirror_api_url = MAGIC_MIRROR_API_URL
         self.magic_mirror_api_token = MAGIC_MIRROR_API_TOKEN
+        self.magic_mirror_min_gesture_confidence = MAGIC_MIRROR_MIN_GESTURE_CONFIDENCE
+        self.magic_mirror_min_face_confidence = MAGIC_MIRROR_MIN_FACE_CONFIDENCE
 
         # Initialize MagicMirrorHandler if MagicMirror integration is enabled
         self.magic_mirror_handler = None
@@ -122,8 +144,20 @@ class user_callbacks_class(app_callback_class):
 
     def send_magic_mirror_action(self, action, face=None, confidence=None):
         """Forward a recognized action/face to the MagicMirror module (if enabled)."""
-        if self.magic_mirror_enabled and self.magic_mirror_handler:
-            self.magic_mirror_handler.send_action(action=action, face=face, confidence=confidence)
+        if not (self.magic_mirror_enabled and self.magic_mirror_handler):
+            return
+        min_confidence = (
+            self.magic_mirror_min_face_confidence
+            if action == "face_recognition"
+            else self.magic_mirror_min_gesture_confidence
+        )
+        if confidence is not None and confidence < min_confidence:
+            hailo_logger.debug(
+                f"Skipping MagicMirror action '{action}': confidence {confidence:.2f} "
+                f"below minimum {min_confidence:.2f}."
+            )
+            return
+        self.magic_mirror_handler.send_action(action=action, face=face, confidence=confidence)
 
     def update_current_person(self, track_id, person_label):
         """

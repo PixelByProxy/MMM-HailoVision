@@ -121,8 +121,16 @@ Enable it with environment variables:
 export HAILO_MAGIC_MIRROR_ENABLED=true
 export HAILO_MAGIC_MIRROR_API_URL="http://localhost:8080/MMM-HailoVision/action"
 export HAILO_MAGIC_MIRROR_API_TOKEN="optional-shared-secret"   # optional
+export HAILO_MAGIC_MIRROR_MIN_GESTURE_CONFIDENCE=0.7           # optional, default 0.7
+export HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE=0.7              # optional, default 0.7
 python magic_mirror.py
 ```
+
+Events below the minimum confidence (0–1, default `0.7`) are still logged
+locally but are not POSTed to the module: swipe gestures gate on the
+person-detection confidence via `HAILO_MAGIC_MIRROR_MIN_GESTURE_CONFIDENCE`,
+and `face_recognition` gates on the classification confidence via
+`HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE`.
 
 If `HAILO_MAGIC_MIRROR_ENABLED` is not set (or the URL is missing), the
 integration stays disabled and the pipeline behaves exactly as before.

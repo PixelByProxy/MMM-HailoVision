@@ -93,6 +93,8 @@ To use this module, add a configuration to the modules array in the
 | `apiToken`         | `String` | `""`          | Optional shared secret. When set, requests must send it in the `X-Hailo-Token` header. |
 | `cameraInputMode`  | `String` | `""`          | Camera source for the pipeline: `"usb"` (USB webcam, auto-detected) or `"rpi"` (Raspberry Pi camera). Empty/undefined omits `--input`, so the pipeline uses its bundled test video. |
 | `launchHailoApp`   | `bool`   | `true`        | Launch the Hailo Python pipeline on startup. |
+| `minFaceConfidence` | `float` | `0.7`         | Minimum face-recognition confidence (0–1) required before the pipeline sends a `face_recognition` action. Forwarded as the `HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE` env var. |
+| `minGestureConfidence` | `float` | `0.7`      | Minimum person-detection confidence (0–1) required before the pipeline sends a swipe gesture. Forwarded as the `HAILO_MAGIC_MIRROR_MIN_GESTURE_CONFIDENCE` env var. |
 | `showStatus`       | `bool`   | `false`       | Show a small status line in the module region. |
 | `trainingDir`      | `String` | `""`          | Directory of face-training images (one subfolder per person). Forwarded to the pipeline as the `HAILO_MAGIC_MIRROR_TRAIN_DIR` env var. Empty uses the bundled default inside the module. |
 
@@ -139,6 +141,8 @@ into the pipeline process so it knows where to POST:
 HAILO_MAGIC_MIRROR_ENABLED=true
 HAILO_MAGIC_MIRROR_API_URL=http://localhost:<MagicMirror port>/MMM-HailoVision/action
 HAILO_MAGIC_MIRROR_API_TOKEN=<apiToken, if set>
+HAILO_MAGIC_MIRROR_MIN_GESTURE_CONFIDENCE=<minGestureConfidence>
+HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE=<minFaceConfidence>
 ```
 
 If you'd rather run the pipeline yourself, leave `launchHailoApp: false` and set
