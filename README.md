@@ -71,7 +71,7 @@ To use this module, add a configuration to the modules array in the
 ```js
     {
         module: "MMM-HailoVision",
-        position: "bottom_left",
+        position: "bottom_right",
         config: {
             cameraInputMode: "rpi",
             actions: {
