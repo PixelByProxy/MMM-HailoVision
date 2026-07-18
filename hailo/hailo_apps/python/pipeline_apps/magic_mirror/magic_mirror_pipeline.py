@@ -189,9 +189,11 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         self.app_callback = app_callback
         self.vector_db_callback_name = "vector_db_callback"
         self.train_vector_db_callback_name = "train_vector_db_callback"
+        self.precrop_guard_name = "precrop_guard"
         if self.options_menu.mode == 'run':
             self.create_pipeline()  # initialize self.pipeline
             self.connect_vector_db_callback()
+            self.connect_precrop_guard_callback()
         # Train mode builds (and tears down) a fresh pipeline per image in
         # run_training(); don't create one here. At this point self.current_file
         # is still None, so a pipeline built now would be a junk
@@ -215,6 +217,13 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         detection_pipeline_wrapper = INFERENCE_PIPELINE_WRAPPER(detection_pipeline, name='face_detection_wrapper')
         tracker_pipeline = TRACKER_PIPELINE(class_id=-1, kalman_dist_thr=0.7, iou_thr=0.8, init_iou_thr=0.9, keep_new_frames=2, keep_tracked_frames=6, keep_lost_frames=8, keep_past_metadata=True, name='hailo_face_tracker')
         mobile_facenet_pipeline = INFERENCE_PIPELINE(hef_path=self.hef_path_recognition, post_process_so=self.post_process_so_face_recognition, post_function_name=self.recognition_func, batch_size=self.batch_size, config_json=None, name='face_recognition_inference')
+        # Identity element whose probe (precrop_guard_callback) removes face
+        # detections with degenerate bboxes before they reach the cropper: the
+        # tracker emits Kalman-PREDICTED boxes for briefly unmatched tracks, so
+        # a face leaving the frame can produce a box fully outside it - the
+        # cropper then builds an empty crop and cv::resize aborts the process
+        # (!ssize.empty()).
+        precrop_guard_pipeline = USER_CALLBACK_PIPELINE(name=self.precrop_guard_name)
         cropper_pipeline = CROPPER_PIPELINE(inner_pipeline=(f'hailofilter so-path={self.post_process_so_face_align} '
                                                             f'name=face_align_hailofilter use-gst-buffer=true qos=false ! '
                                                             f'{QUEUE(name="detector_pos_face_align_q")} ! '
@@ -232,14 +241,28 @@ class GStreamerMagicMirrorApp(GStreamerApp):
             vector_db_callback_pipeline = USER_CALLBACK_PIPELINE(name=self.train_vector_db_callback_name)
             display_pipeline = DISPLAY_PIPELINE(video_sink=self.video_sink, sync=self.sync, show_fps=self.show_fps)
 
-        pipeline_parts = [source_pipeline]
+        # ORDERING CONSTRAINT: the face branch (detection -> tracker -> cropper)
+        # must run BEFORE the pose branch. The face tracker uses class_id=-1
+        # (track everything) with keep_past_metadata=true; if pose runs first,
+        # the face tracker also matches the pose "person" detections and
+        # re-attaches the pose tracker's HAILO_UNIQUE_ID as "past metadata"
+        # every frame. A long-lived person track (someone standing at the
+        # mirror, or a static false positive) then accumulates thousands of
+        # unique-id objects, and per-frame processing cost grows until the
+        # pipeline collapses to <1 FPS. With face-first ordering, person
+        # detections don't exist yet when the face tracker runs, and the pose
+        # tracker (class_id=0) ignores face detections (class_id=-1).
+        pipeline_parts = [
+            source_pipeline,
+            detection_pipeline_wrapper,
+            tracker_pipeline,
+            precrop_guard_pipeline,
+            cropper_pipeline,
+            vector_db_callback_pipeline,
+        ]
         if pose_pipeline_wrapper:
             pipeline_parts.extend([pose_pipeline_wrapper, pose_tracker_pipeline])
         pipeline_parts.extend([
-            detection_pipeline_wrapper,
-            tracker_pipeline,
-            cropper_pipeline,
-            vector_db_callback_pipeline,
             user_callback_pipeline,
             display_pipeline,
         ])
@@ -290,6 +313,7 @@ class GStreamerMagicMirrorApp(GStreamerApp):
                 self.current_file = os.path.join(person_folder, image_file)
                 self.create_pipeline()
                 self.connect_train_vector_db_callback()
+                self.connect_precrop_guard_callback()
                 try:
                     self.pipeline.set_state(Gst.State.PLAYING)
                     time.sleep(2)
@@ -319,6 +343,32 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         if identity:
             identity_pad = identity.get_static_pad("src")  # src is the output of an element
             identity_pad.add_probe(Gst.PadProbeType.BUFFER, self.train_vector_db_callback, self.user_data)  # trigger - when the pad gets buffer
+
+    def connect_precrop_guard_callback(self):
+        identity = self.pipeline.get_by_name(self.precrop_guard_name)
+        if identity:
+            identity_pad = identity.get_static_pad("src")
+            identity_pad.add_probe(Gst.PadProbeType.BUFFER, self.precrop_guard_callback, self.user_data)
+
+    # Faces whose visible (frame-clamped) area is thinner than this fraction of
+    # the frame produce empty/near-empty crops; they are useless for
+    # recognition and crash the cropper's cv::resize when fully outside.
+    PRECROP_MIN_VISIBLE_SIZE = 0.004
+
+    def precrop_guard_callback(self, pad, info, user_data):
+        buffer = info.get_buffer()
+        if buffer is None:
+            return Gst.PadProbeReturn.OK
+        roi = hailo.get_roi_from_buffer(buffer)
+        for detection in roi.get_objects_typed(hailo.HAILO_DETECTION):
+            if detection.get_label() != 'face':
+                continue
+            bbox = detection.get_bbox()
+            visible_w = min(1.0, bbox.xmax()) - max(0.0, bbox.xmin())
+            visible_h = min(1.0, bbox.ymax()) - max(0.0, bbox.ymin())
+            if visible_w < self.PRECROP_MIN_VISIBLE_SIZE or visible_h < self.PRECROP_MIN_VISIBLE_SIZE:
+                roi.remove_object(detection)
+        return Gst.PadProbeReturn.OK
 
     def save_image_file(self, frame, image_path):
         image = Image.fromarray(frame)

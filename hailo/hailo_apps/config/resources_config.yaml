@@ -48,7 +48,10 @@ magic_mirror:
           source: mz
         - name: arcface_mobilefacenet
           source: mz
-        - name: yolov8m_pose
+        # yolov8s_pose instead of yolov8m_pose: three models time-share the
+        # device, so every frame pays a model context switch. The m-size pose
+        # weights dominate that reload cost and collapse pipeline FPS.
+        - name: yolov8s_pose
           source: mz
     hailo8l:
       default:
