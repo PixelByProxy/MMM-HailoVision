@@ -9,3 +9,4 @@ Files:
 - `.hailo/memory/pipeline_optimization.md` — GStreamer bottleneck fixes
 - `.hailo/memory/camera_and_display.md` — Camera & OpenCV patterns
 - `.hailo/memory/hailo_platform_api.md` — SDK usage patterns
+- `.hailo/memory/tracker-order-unique-id-accumulation.md` — Tracker order: face branch before pose: second tracker re-attaches foreign HAILO_UNIQUE_IDs as past metadata, unbounded growth collapses FPS; fixed 2026-07-18
