@@ -15,6 +15,7 @@ from gi.repository import Gst
 import hailo
 from hailo_apps.python.core.common.bounded_lru import BoundedLruDict
 from hailo_apps.python.core.common.buffer_utils import get_caps_from_pad
+from hailo_apps.python.core.common.env_utils import get_env_bool, get_env_float, get_env_str
 from hailo_apps.python.core.common.hailo_logger import get_logger
 from hailo_apps.python.core.common.magic_mirror_handler import MagicMirrorHandler
 from hailo_apps.python.core.gstreamer.gstreamer_app import app_callback_class
@@ -22,28 +23,6 @@ from hailo_apps.python.pipeline_apps.magic_mirror.magic_mirror_pipeline import G
 
 hailo_logger = get_logger(__name__)
 # endregion imports
-
-
-def get_env_bool(name, default=False):
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in ("1", "true", "yes", "on")
-
-
-def get_env_str(name, default=""):
-    return os.getenv(name, default).strip()
-
-
-def get_env_float(name, default=0.0):
-    value = os.getenv(name)
-    if value is None:
-        return default
-    try:
-        return float(value.strip())
-    except ValueError:
-        hailo_logger.warning(f"Invalid float for {name}: {value!r}; using default {default}.")
-        return default
 
 
 # region Constants
