@@ -70,6 +70,11 @@ GESTURE_SMOOTHING_SAMPLES = 3
 # Fraction of total horizontal travel that must be in the dominant direction for a clean swipe
 # (rejects back-and-forth waves and noisy jitter that net out to a false direction).
 GESTURE_DIRECTION_CONSISTENCY = 0.75
+# A swipe must be a cross-body motion: the wrist has to end at least this
+# fraction of the bbox width past the body midline (shoulder midpoint). Small
+# same-side hand movements can clear the distance thresholds but never cross
+# the midline, so they no longer register as swipes.
+GESTURE_MIDLINE_MARGIN_RATIO = 0.08
 # Consecutive classifications a NEW person label must persist on the SAME face
 # track before we accept it. Recognition confidence flickers around the
 # threshold (Alice <-> Unknown), and every accepted switch fires a
@@ -209,18 +214,23 @@ class user_callbacks_class(app_callback_class):
             self.latest_gesture_frame.clear()
         return True
 
-    def update_gesture(self, track_id, wrist_name, x, y, bbox_width, bbox_height):
+    def update_gesture(self, track_id, wrist_name, x, y, body_center_x, bbox_width, bbox_height):
         """
         Track wrist movement and return a recognized gesture name when a swipe completes.
 
         Direction is reported from the person's perspective (mirror-style): "swipe_right"
         means the user moved their hand toward their own right. The camera feed is not
         horizontally flipped, so the user's right is toward decreasing image-x.
+
+        A swipe is a cross-body motion, not just lateral travel: the wrist must
+        start on its own side of the body midline and finish past the midline on
+        the opposite side. That also pins each direction to one arm - the left
+        wrist produces "swipe_right", the right wrist "swipe_left".
         """
         current_frame = self.get_count()
         state_key = (track_id, wrist_name)
         history = self.gesture_tracks.setdefault(state_key, deque(maxlen=GESTURE_HISTORY_LENGTH))
-        history.append((current_frame, x, y))
+        history.append((current_frame, x, y, body_center_x))
 
         if len(history) < GESTURE_HISTORY_LENGTH:
             return None
@@ -231,8 +241,8 @@ class user_callbacks_class(app_callback_class):
             history.clear()
             return None
 
-        xs = [px for _, px, _ in history]
-        ys = [py for _, _, py in history]
+        xs = [px for _, px, _, _ in history]
+        ys = [py for _, _, py, _ in history]
 
         # Average a few samples at each end so a single bad keypoint can't flip the result.
         k = min(GESTURE_SMOOTHING_SAMPLES, len(xs) // 2)
@@ -261,7 +271,31 @@ class user_callbacks_class(app_callback_class):
         ):
             return None
 
-        gesture_name = "swipe_right" if horizontal_delta < 0 else "swipe_left"
+        # Cross-body gate. Average the midline over the window so torso sway
+        # during the swipe doesn't move the goalposts mid-gesture.
+        midline_x = sum(cx for _, _, _, cx in history) / len(history)
+        margin = bbox_width * GESTURE_MIDLINE_MARGIN_RATIO
+        if horizontal_delta < 0:
+            # Toward the person's right (decreasing image-x): only the left
+            # wrist coming across the body counts. The left wrist sits at
+            # increasing image-x, so it must start on its own side of the
+            # midline and finish clearly past it.
+            gesture_name = "swipe_right"
+            crossed_body = (
+                wrist_name == "left_wrist"
+                and start_x > midline_x
+                and end_x < midline_x - margin
+            )
+        else:
+            gesture_name = "swipe_left"
+            crossed_body = (
+                wrist_name == "right_wrist"
+                and start_x < midline_x
+                and end_x > midline_x + margin
+            )
+        if not crossed_body:
+            return None
+
         cooldown_key = (track_id, gesture_name)
         last_gesture_frame = self.latest_gesture_frame.get(cooldown_key, -GESTURE_COOLDOWN_FRAMES)
         if current_frame - last_gesture_frame < GESTURE_COOLDOWN_FRAMES:
@@ -323,6 +357,11 @@ def app_callback(element, buffer, user_data):
 
             bbox = detection.get_bbox()
             points = landmarks[0].get_points()
+            # Body midline (shoulder midpoint) that a wrist must cross for a swipe.
+            left_shoulder = points[COCO_KEYPOINTS["left_shoulder"]]
+            right_shoulder = points[COCO_KEYPOINTS["right_shoulder"]]
+            shoulder_mid = (left_shoulder.x() + right_shoulder.x()) / 2
+            body_center_x = int((shoulder_mid * bbox.width() + bbox.xmin()) * width)
             for wrist_name in ("left_wrist", "right_wrist"):
                 point = points[COCO_KEYPOINTS[wrist_name]]
                 x = int((point.x() * bbox.width() + bbox.xmin()) * width)
@@ -332,6 +371,7 @@ def app_callback(element, buffer, user_data):
                     wrist_name=wrist_name,
                     x=x,
                     y=y,
+                    body_center_x=body_center_x,
                     bbox_width=bbox.width() * width,
                     bbox_height=bbox.height() * height,
                 )
