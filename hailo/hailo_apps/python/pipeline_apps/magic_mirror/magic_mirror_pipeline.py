@@ -267,18 +267,6 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         ])
         return ' ! '.join(pipeline_parts)
 
-    def _on_pipeline_rebuilt(self):
-        # Called by the base _rebuild_pipeline() each time a file source loops
-        # on EOS. The base only re-attaches the standard identity_callback, so
-        # our custom pad probes must be re-added here or they are silently lost
-        # after the first play-through: without the precrop guard a face box
-        # outside the frame reaches the cropper and cv::resize aborts the
-        # process, and without the vector-db probe face recognition stops. Both
-        # connect_* helpers no-op if the element isn't present, so this is safe
-        # regardless of mode.
-        self.connect_vector_db_callback()
-        self.connect_precrop_guard_callback()
-
     def run(self):
         if self.options_menu.mode == 'run':
             super().run()  # start the Gstreamer pipeline
