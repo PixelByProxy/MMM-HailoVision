@@ -5,14 +5,14 @@ hailo_apps_infra/__pycache__/
 *.pyo
 
 # Resources
-resources/*.so
-resources/*.hef
-resources/*.mp4
+hailo/resources/*.so
+hailo/resources/*.hef
+hailo/resources/*.mp4
 
 # Piper TTS models (large files, must be downloaded locally)
-local_resources/piper_models/*.onnx
-local_resources/piper_models/*.onnx.json
-!local_resources/piper_models/.gitkeep
+hailo/local_resources/piper_models/*.onnx
+hailo/local_resources/piper_models/*.onnx.json
+!hailo/local_resources/piper_models/.gitkeep
 
 # Logs and temp files
 *.log
@@ -25,7 +25,7 @@ local_resources/piper_models/*.onnx.json
 *.ogg
 
 # User-specific audio device preferences
-local_resources/audio_device_preferences.json
+hailo/local_resources/audio_device_preferences.json
 
 # Packages and dependencies
 *.egg-info/
@@ -57,13 +57,17 @@ resources
 # IDE configuration files (user-specific)
 .vscode/launch.json
 .cursor/
-.vscode/
+.claude/ralph-loop.local.md
 docs/superpowers/
 
+# VS Code configuration
+.vscode/*
+!.vscode/tasks.json
+
 # App Data
-hailo_apps/python/pipeline_apps/face_recognition/database/
-hailo_apps/python/pipeline_apps/face_recognition/samples/
-hailo_apps/python/pipeline_apps/face_recognition/train/
-hailo_apps/python/pipeline_apps/magic_mirror/database/
-hailo_apps/python/pipeline_apps/magic_mirror/samples/
-hailo_apps/python/pipeline_apps/magic_mirror/train/
+hailo/hailo_apps/python/pipeline_apps/face_recognition/database/
+hailo/hailo_apps/python/pipeline_apps/face_recognition/samples/
+hailo/hailo_apps/python/pipeline_apps/face_recognition/train/
+hailo/hailo_apps/python/pipeline_apps/magic_mirror/database/
+hailo/hailo_apps/python/pipeline_apps/magic_mirror/samples/
+hailo/hailo_apps/python/pipeline_apps/magic_mirror/train/

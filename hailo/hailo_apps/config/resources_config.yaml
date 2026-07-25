@@ -1,0 +1,84 @@
+# Resources configuration organized by app
+# Each app contains models (default/extra per architecture) and JSON files
+# Videos, images, JSON and npy's are shared across all apps (see top-level sections)
+# Models can be from Model Zoo (mz), S3 (s3), or Gen-AI Model Zoo (gen-ai-mz)
+#
+# Structure:
+#   app_name:
+#     models:
+#       hailo8/hailo8l/hailo10h:
+#         default: [list of model entries]
+#         extra: [list of additional models for this arch]
+#       Each model entry:
+#         - {name: "model_name", source: "mz"}  # Model Zoo model
+#         - {name: "model_name", source: "s3"}  # S3 model (URL built dynamically)
+#         - {name: "model_name", url: "https://...", source: "s3"}  # S3 model with explicit URL (backward compatibility)
+#         - {name: "model_name", source: "gen-ai-mz"}  # Gen-AI model from server (URL built from metadata)
+#
+#   json: [list of JSON config file entries - shared across all apps]
+#   npy: [list of npy file entries - shared across all apps]
+#   videos: [list of video entries with name field]
+#   images: [list of image entries with name and url]
+
+# Shared videos used by magic_mirror
+videos:
+  - name: face_recognition.mp4
+    source: s3
+    tag:
+      - magic_mirror
+
+# Shared images (none required by magic_mirror)
+images: []
+
+# Shared JSON config files used by magic_mirror
+json:
+  - name: scrfd.json
+    source: s3
+    tag:
+      - magic_mirror
+
+# Shared npy files (none required by magic_mirror)
+npy: []
+
+magic_mirror:
+  models:
+    hailo8:
+      default:
+        - name: scrfd_10g
+          source: mz
+        - name: arcface_mobilefacenet
+          source: mz
+        # yolov8s_pose instead of yolov8m_pose: three models time-share the
+        # device, so every frame pays a model context switch. The m-size pose
+        # weights dominate that reload cost and collapse pipeline FPS.
+        - name: yolov8s_pose
+          source: mz
+    hailo8l:
+      default:
+        - name: scrfd_2.5g
+          source: mz
+        - name: arcface_mobilefacenet
+          source: mz
+        - name: yolov8s_pose
+          source: mz
+    hailo10h:
+      default:
+        - name: scrfd_10g
+          source: mz
+        - name: arcface_mobilefacenet
+          source: mz
+        - name: yolov8m_pose
+          source: mz
+
+metadata:
+  # S3 base URLs for dynamic URL construction
+  s3_endpoints:
+    cs_bucket: "https://hailo-csdata.s3.eu-west-2.amazonaws.com/resources"
+    model_zoo_h8: "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled"
+    gen_ai_mz: "https://dev-public.hailo.ai"
+
+  # Model Zoo version mapping
+  model_zoo_versions:
+    hailo8: "v2.17.0"
+    hailo8l: "v2.17.0"
+    hailo10h: "v5.2.0"

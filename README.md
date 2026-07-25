@@ -1,97 +1,168 @@
-![Hailo Apps Banner](doc/images/banner.png)
+# MMM-HailoVision
 
-# Hailo-Apps
+## Description
 
-High performance AI applications for Hailo accelerators, including GStreamer pipelines, GenAI assistants, and standalone C++/Python apps.
+This [MagicMirror²][mm] module lets your mirror react to what its camera sees,
+using Hailo-accelerated face recognition and gesture detection. Swipe left or
+right in front of your mirror to change pages, or have it greet you by name
+when it recognizes your face!
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hailo-ai/hailo-apps)
+For each `(action, face)` pair you decide what happens: broadcast a
+MagicMirror notification (to control other modules) and/or run a shell command
+on the host. Supported actions out of the box: `face_recognition`,
+`swipe_left`, `swipe_right`. You can add any custom action key — it just has
+to match the `action` string the pipeline sends.
 
-## Supported Platforms and Devices
-| Platforms | Accelerators |
-|---|---|
-| ![Raspberry Pi](https://img.shields.io/badge/Raspberry-Pi%205-red?logo=raspberrypi&logoColor=white) ![Ubuntu](https://img.shields.io/badge/Ubuntu-x86__64-E95420?logo=ubuntu&logoColor=white) ![Windows](https://img.shields.io/badge/Windows-blue?logo=windows&logoColor=white) | ![Hailo-8](https://img.shields.io/badge/Hailo-8-00A4EF?logoColor=white) ![Hailo-8L](https://img.shields.io/badge/Hailo-8L-00A4EF?logoColor=white) ![Hailo-10H](https://img.shields.io/badge/Hailo-10H-00A4EF?logoColor=white) |
+## Prerequisites
 
-## AI-Powered Development (Beta)
+This module requires:
 
-Use AI coding agents to quickly create Hailo applications. Just describe your idea and the agent builds, validates, and runs it for you.
+- **MagicMirror²** — an existing [MagicMirror²][mm] installation to add this
+  module to.
+- **A Raspberry Pi with Hailo-powered AI hardware** — either the Raspberry Pi
+  AI HAT+ or the Raspberry Pi AI HAT+ 2. See the
+  [Raspberry Pi AI documentation][rpi-ai] for more information.
+- **A camera** — either a Raspberry Pi camera or any other USB camera. See the
+  [Raspberry Pi camera documentation][rpi-camera] for more information on the
+  Raspberry Pi camera options.
 
- Supports VLM, LLM, pipeline, and standalone app types across all Hailo accelerators. **[Get started →](./doc/user_guide/agentic_development.md)**
+## Installation
 
-🎮 Try out our [Easter Eggs game](hailo_apps/python/pipeline_apps/easter_game/), built autonomously by AI.
-
-<img src="doc/images/agentic_ai.gif" width="600"/>
-
-
-## Applications
-
-30+ ready-to-run applications:
-
-| Type | Best For | Location |
-|------|----------|----------|
-| **GenAI Apps** | LLM/VLM/speech workflows on Hailo-10H | `hailo_apps/python/gen_ai_apps/` |
-| **Pipeline Apps** | Real-time camera/RTSP/video processing | `hailo_apps/python/pipeline_apps/` |
-| **Standalone Apps** | HailoRT learning and minimal per-app installs | `hailo_apps/python/standalone_apps/` + `hailo_apps/cpp/` |
-
-[All Applications](./doc/user_guide/running_applications.md)
-
-### New in v26.03.0
-Windows support, YOLO26 models, Voice2Action demo, AI-powered agentic development, and more.
-
-[Full changelog →](./changelog.md)
-
-## Requirements
-
-All packages must be installed **before** running `install.sh`. Download from the [Hailo Developer Zone](https://hailo.ai/developer-zone/).
-
-| Package | Type | Required For |
-|---|---|---|
-| HailoRT PCIe Driver | .deb | All apps |
-| HailoRT | .deb | All apps |
-| TAPPAS Core | .deb | GStreamer pipeline apps |
-| HailoRT Python Binding | .whl | All Python apps |
-| TAPPAS Core Python Binding | .whl | GStreamer pipeline apps |
-
-> **Tip:** Standalone and gen-ai apps do **not** require TAPPAS packages. Use `--no-tappas-required` with `install.sh` to skip them.
-
-[Full installation Guide](./doc/user_guide/installation.md)
-
-## Quick Start
-> **💡 Tip:** Standalone apps can be installed and run independently, they do **not** require `hailo-tappas-core` or installing the full Hailo-Apps repository.
-
-### Install Hailo-Apps
+In your terminal, go to your MagicMirror's module directory:
 
 ```bash
-git clone https://github.com/hailo-ai/hailo-apps.git
-cd hailo-apps
-sudo ./install.sh
+cd ~/MagicMirror/modules
 ```
 
-### Quick Examples
+Clone this repository (the repo root **is** the module) and run the setup
+script:
 
 ```bash
-source setup_env.sh           # Activate environment
-hailo-detect-simple           # Object detection
-hailo-pose                    # Pose estimation
-hailo-seg                     # Instance segmentation
-hailo-depth                   # Depth estimation
-hailo-tiling                  # Tiling for high-res processing
+git clone https://github.com/PixelByProxy/MMM-HailoVision.git
+cd MMM-HailoVision
+./setup.sh
 ```
 
-| Detection | Pose Estimation | Instance Segmentation | Depth Estimation |
-|---|---|---|---|
-| <img src="doc/images/detection.gif" width="200"/> | <img src="doc/images/pose_estimation.gif" width="200"/> | <img src="doc/images/instance_segmentation.gif" width="200"/> | <img src="doc/images/depth.gif" width="200"/> |
+The setup script requires root privileges and will prompt for your password
+via `sudo` if needed.
 
-## Documentation
+Then add the module block to your MagicMirror config (see
+[Configuration](#configuration)).
 
-**[📖 Complete Documentation](./doc/README.md)**
+## Update
 
-| Guide | What's Inside |
-|-------|---------------|
-| **[User Guide](./doc/user_guide/README.md)** | Installation, running apps, configuration, repository structure |
-| **[Developer Guide](./doc/developer_guide/README.md)** | Build custom apps, write post-processing, model retraining |
+Go to the module's directory inside your MagicMirror's module directory and
+pull the latest version:
 
-## Support
+```bash
+cd ~/MagicMirror/modules/MMM-HailoVision
+git pull
+./setup.sh
+```
 
-💬 [Hailo Community Forum](https://community.hailo.ai/)
+## Configuration
 
-**License:** MIT - see [LICENSE](LICENSE)
+To use this module, add a configuration to the modules array in the
+`config/config.js` file.
+
+*Note*: You can find a complete, copy-paste configuration example in
+[config.example.js](config.example.js).
+
+```js
+    {
+        module: "MMM-HailoVision",
+        position: "bottom_right",
+        config: {
+            cameraInputMode: "rpi",
+            actions: {
+                swipe_left:  { "*": { notification: "PAGE_INCREMENT" } },
+                swipe_right: { "*": { notification: "PAGE_DECREMENT" } },
+                face_recognition: {
+                    Anna: { notification: "SHOW_ALERT", payload: { title: "Hailo Vision", message: "Hi Anna!", timer: 4000 } },
+                    "*":  { shell: "echo recognized $HAILO_FACE" }
+                }
+            }
+        }
+    },
+```
+
+### Configuration options
+
+| Option             | Type     | Default Value | Description |
+| ------------------ | -------- | ------------- | ----------- |
+| `actionCooldownMs` | `int`    | `500`         | Minimum milliseconds between two executions of the same `(action, face)` handler; repeated events inside the window are acknowledged but not acted on. Set to `0` to disable rate limiting. |
+| `actions`          | `object` | see below     | `action → face → handler` map. See [The `actions` map](#the-actions-map). |
+| `apiToken`         | `String` | `""`          | Optional shared secret. When set, requests must send it in the `X-Hailo-Token` header. |
+| `cameraInputMode`  | `String` | `""`          | Camera source for the pipeline: `"usb"` (USB webcam, auto-detected) or `"rpi"` (Raspberry Pi camera). Empty/undefined omits `--input`, so the pipeline uses its bundled test video. |
+| `launchHailoApp`   | `bool`   | `true`        | Launch the Hailo Python pipeline on startup. |
+| `minFaceConfidence` | `float` | `0.8`         | Minimum face-recognition confidence (0–1) required before the pipeline sends a `face_recognition` action. Forwarded as the `HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE` env var. |
+| `minGestureConfidence` | `float` | `0.8`      | Minimum person-detection confidence (0–1) required before the pipeline sends a swipe gesture. Forwarded as the `HAILO_MAGIC_MIRROR_MIN_GESTURE_CONFIDENCE` env var. |
+| `showStatus`       | `bool`   | `false`       | Show a small status line in the module region. |
+| `trainingDir`      | `String` | `""`          | Directory of face-training images (one subfolder per person). Forwarded to the pipeline as the `HAILO_MAGIC_MIRROR_TRAIN_DIR` env var. Empty uses the bundled default inside the module. |
+
+### The `actions` map
+
+```js
+actions: {
+  swipe_left:  { "*": { notification: "PAGE_INCREMENT" } },
+  swipe_right: { "*": { notification: "PAGE_DECREMENT" } },
+  face_recognition: {
+    Anna:    { notification: "SHOW_ALERT", payload: { title: "Hailo Vision", message: "Hi Anna!", timer: 4000 } },
+    "*":     { shell: "echo recognized $HAILO_FACE" }
+  }
+}
+```
+
+- The first key is the **action**.
+- The second key is the **face** (the recognized person label), or `"*"` to
+  match any face. An exact face match wins; otherwise `"*"` is used.
+- Each **handler** may define:
+  - `notification` (+ optional `payload`): a MagicMirror notification that is
+    broadcast via `sendNotification`, so other modules can react (e.g.
+    [MMM-pages][pages] listens for `PAGE_INCREMENT` / `PAGE_DECREMENT`).
+  - `shell`: a host command. `$HAILO_ACTION` and `$HAILO_FACE` are available in
+    its environment.
+
+## Notifications
+
+This module does not handle any incoming notifications. The notifications it
+sends out are entirely defined by your `actions` configuration: whenever a
+handler with a `notification` key matches an incoming event, that notification
+is broadcast to all modules via `sendNotification`, with the configured
+`payload` (if any).
+
+For example, with the configuration above, a `swipe_left` event broadcasts
+`PAGE_INCREMENT`, which [MMM-pages][pages] uses to switch pages.
+
+## How it connects to the Python pipeline
+
+When `launchHailoApp` is `true`, the module injects these environment variables
+into the pipeline process so it knows where to POST:
+
+```
+HAILO_MAGIC_MIRROR_ENABLED=true
+HAILO_MAGIC_MIRROR_API_URL=http://localhost:<MagicMirror port>/MMM-HailoVision/action
+HAILO_MAGIC_MIRROR_API_TOKEN=<apiToken, if set>
+HAILO_MAGIC_MIRROR_MIN_GESTURE_CONFIDENCE=<minGestureConfidence>
+HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE=<minFaceConfidence>
+```
+
+If you'd rather run the pipeline yourself, leave `launchHailoApp: false` and set
+those variables manually (see the magic_mirror app README).
+
+## REST API
+
+`POST /MMM-HailoVision/action`
+
+```json
+{ "action": "swipe_left", "face": "Alice", "confidence": 0.92 }
+```
+
+Response: `{ "ok": true, "matched": true, "action": "...", "face": "..." }`.
+`matched` is `false` when no handler is configured for that pair (still HTTP
+200). A `GET` on the same path is a health check.
+
+[mm]: https://github.com/MagicMirrorOrg/MagicMirror
+[pages]: https://github.com/edward-shen/MMM-pages
+[rpi-ai]: https://www.raspberrypi.com/documentation/computers/ai.html
+[rpi-camera]: https://www.raspberrypi.com/documentation/accessories/camera.html

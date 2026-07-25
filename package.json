@@ -1,0 +1,25 @@
+{
+  "name": "mmm-hailovision",
+  "version": "0.1.0",
+  "description": "MagicMirror² module that bridges the Hailo Magic Mirror face-recognition / gesture pipeline into MagicMirror via a REST API, with configurable per-face actions and an optional Hailo pipeline launcher.",
+  "main": "MMM-HailoVision.js",
+  "keywords": [
+    "MagicMirror",
+    "hailo",
+    "face-recognition",
+    "gesture",
+    "magic-mirror"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PixelByProxy/MMM-HailoVision.git"
+  },
+  "homepage": "https://github.com/PixelByProxy/MMM-HailoVision#readme",
+  "bugs": {
+    "url": "https://github.com/PixelByProxy/MMM-HailoVision/issues"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

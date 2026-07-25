@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# kill_first_hailo.sh — find the first /dev/hailo* and kill any process using it
+# release_hailo.sh — free the Hailo device: find the first /dev/hailo* and
+# kill any process holding it open.
 
 set -uo pipefail
 

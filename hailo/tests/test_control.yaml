@@ -1,0 +1,96 @@
+# ============================================================================
+# TEST CONTROL CONFIGURATION
+# ============================================================================
+# Controls test execution parameters, logging, and special test configurations
+
+# Control parameters
+control_parameters:
+  default_run_time: 40  # seconds
+  term_timeout: 5      # seconds - timeout for test termination
+  human_verification_run_time: 60  # seconds - extended time for manual verification
+
+# Logging configuration
+logging:
+  base_dir: "./logs"
+  level: "INFO"  # DEBUG | INFO | WARNING | ERROR | CRITICAL
+  format: "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
+  subdirs:
+    per_app:
+      magic_mirror:
+        default: "./logs/magic_mirror/default"
+        extra: "./logs/magic_mirror/extra"
+        all: "./logs/magic_mirror/all"
+
+# ============================================================================
+# Test combinations configuration
+# ============================================================================
+# Preset modes that override per-app custom_tests settings.
+# When a preset is enabled, test_runner uses its mode (default/extra/all) for
+# every app, ignoring the per-app test_suite_mode.
+# Leave all presets disabled to use the per-app settings under custom_tests.
+
+test_combinations:
+  magic_mirror_default:
+    enabled: false
+  magic_mirror_all:
+    enabled: false
+
+################################################################################
+# Custom Test Per App configuration
+################################################################################
+custom_tests:
+  enabled: true  # Enable custom tests to run pipeline tests
+  apps:
+    magic_mirror:
+      test_suite_mode: "default"  # None | default | extra | all
+      model_selection: "default"  # default | extra | all
+      description: "Magic Mirror Pipeline"
+
+# Per-app run-time overrides (seconds)
+# Use this to give slow-starting apps extra time beyond the default_run_time.
+run_time_overrides:
+  magic_mirror: 60
+
+# Standalone app tests (none in this build)
+standalone_tests:
+  enabled: false
+  apps: {}
+
+# GenAI tests configuration (none in this build)
+genai_tests:
+  enabled: false
+  apps: {}
+
+# Special tests configuration
+special_tests:
+  h8l_on_h8:
+    enabled: true
+    description: "Run H8L architecture on H8 hardware"
+
+  sanity_checks:
+    enabled: true
+    description: "Basic sanity checks before test execution"
+
+  human_verification:
+    enabled: false
+    description: "Tests requiring human verification and validation"
+
+  golden_tests:
+    enabled: false
+    description: "Golden reference tests for baseline validation"
+
+# Run methods configuration
+run_methods:
+  pythonpath:
+    enabled: true  # Always true (primary method)
+    priority: 1
+
+  cli:
+    enabled: true
+    priority: 2
+    command_template: "python -m test_runner"
+
+  module:
+    enabled: false
+    priority: 3
+    module_name: "test_execution.runner"
