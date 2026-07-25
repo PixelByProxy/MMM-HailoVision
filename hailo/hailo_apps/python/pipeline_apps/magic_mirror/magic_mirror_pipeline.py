@@ -43,8 +43,7 @@ from hailo_apps.python.core.common.defines import (
     FACE_RECOGNITION_POSTPROCESS_SO_FILENAME, 
     FACE_ALIGN_POSTPROCESS_SO_FILENAME, 
     FACE_CROP_POSTPROCESS_SO_FILENAME,
-    RESOURCES_VIDEOS_DIR_NAME,
-    FACE_RECOGNITION_VIDEO_NAME,
+    MAGIC_MIRROR_VIDEO_NAME,
     FACE_RECON_TRAIN_DIR_NAME,
     FACE_RECON_SAMPLES_DIR_NAME,
     RESOURCES_JSON_DIR_NAME,
@@ -142,7 +141,7 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         # Use self.arch which is set by parent
         
         if BASIC_PIPELINES_VIDEO_EXAMPLE_NAME in self.video_source:
-            self.video_source = get_resource_path(pipeline_name=None, resource_type=RESOURCES_VIDEOS_DIR_NAME, arch=self.arch, model=FACE_RECOGNITION_VIDEO_NAME)
+            self.video_source = get_resource_path(pipeline_name=None, resource_type=DEFAULT_LOCAL_RESOURCES_PATH, arch=self.arch, model=MAGIC_MIRROR_VIDEO_NAME)
         
         self.current_file = None  # for train mode
         self.processed_names = {}  # name -> global_id for train mode - pipeline will be playing for 2 seconds, so we need to ensure each person will be processed only once
@@ -267,7 +266,19 @@ class GStreamerMagicMirrorApp(GStreamerApp):
             display_pipeline,
         ])
         return ' ! '.join(pipeline_parts)
-    
+
+    def _on_pipeline_rebuilt(self):
+        # Called by the base _rebuild_pipeline() each time a file source loops
+        # on EOS. The base only re-attaches the standard identity_callback, so
+        # our custom pad probes must be re-added here or they are silently lost
+        # after the first play-through: without the precrop guard a face box
+        # outside the frame reaches the cropper and cv::resize aborts the
+        # process, and without the vector-db probe face recognition stops. Both
+        # connect_* helpers no-op if the element isn't present, so this is safe
+        # regardless of mode.
+        self.connect_vector_db_callback()
+        self.connect_precrop_guard_callback()
+
     def run(self):
         if self.options_menu.mode == 'run':
             super().run()  # start the Gstreamer pipeline

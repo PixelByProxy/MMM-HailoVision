@@ -198,6 +198,7 @@ POSE_ESTIMATION_MODEL_NAME_H8L = "yolov8s_pose"
 # Face recognition pipeline defaults
 MAGIC_MIRROR_APP_TITLE = "Hailo Magic Mirror App"
 MAGIC_MIRROR_PIPELINE = "magic_mirror"
+MAGIC_MIRROR_VIDEO_NAME = "magic_mirror.mp4"
 FACE_RECOGNITION_APP_TITLE = "Hailo Face Recognition App"
 FACE_DETECTION_PIPELINE = "face_detection"
 FACE_DETECTION_MODEL_NAME_H8 = "scrfd_10g"

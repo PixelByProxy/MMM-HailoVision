@@ -33,17 +33,9 @@
         }
       },
       face_recognition: {
-        Alice: {
+        Logan: {
           notification: "SHOW_ALERT",
-          payload: { title: "Hailo Vision", message: "Hi Alice!", timer: 4000 }
-        },
-        Anna: {
-          notification: "SHOW_ALERT",
-          payload: { title: "Hailo Vision", message: "Hi Anna!", timer: 4000 }
-        },
-        Bob: {
-          notification: "SHOW_ALERT",
-          payload: { title: "Hailo Vision", message: "Hi Bob!", timer: 4000 }
+          payload: { title: "Hailo Vision", message: "Hi Logan!", timer: 4000 }
         },
         Unknown: {
           notification: "SHOW_ALERT",
