@@ -110,7 +110,9 @@ Module.register("MMM-HailoVision", {
       // a notification into the rest of MagicMirror.
       this.lastEvent = payload;
       if (payload.notification) {
-        this.sendNotification(payload.notification, payload.payload || {});
+        // Use ?? rather than || so falsy-but-valid payloads survive (e.g. the
+        // page index 0 for a PAGE_CHANGED notification).
+        this.sendNotification(payload.notification, payload.payload ?? {});
       }
       if (this.config.showStatus) {
         this.updateDom();
