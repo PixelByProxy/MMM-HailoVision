@@ -93,7 +93,8 @@ class DatabaseHandler:
         return table
 
     def create_record(
-        self, embedding: np.ndarray, sample: str, timestamp: int, label: str = "Unknown"
+        self, embedding: np.ndarray, sample: str, timestamp: int, label: str = "Unknown",
+        source_path: str = ""
     ) -> dict[str, Any]:
         """Creates a record in the LanceDB table and generates a global ID.
 
@@ -102,6 +103,9 @@ class DatabaseHandler:
             label (str) (optional): The label (e.g., name) associated with the record.
             sample (str) (required): The sample sample path.
             timestamp (int) (required): The timestamp of the sample.
+            source_path (str) (optional): Identifier of the origin this sample was
+                derived from (e.g., the training image). Lets a caller tell which
+                inputs a record already covers so they aren't embedded twice.
 
         Returns:
             record: The newly created record record as dict.
@@ -116,7 +120,8 @@ class DatabaseHandler:
             avg_embedding=embedding.tolist(),
             last_sample_recieved_time=timestamp,
             samples_json=json.dumps(
-                [{"embedding": embedding.tolist(), "sample_path": sample, "id": str(uuid.uuid4())}]
+                [{"embedding": embedding.tolist(), "sample_path": sample, "id": str(uuid.uuid4()),
+                  "source_path": source_path}]
             ),
             classificaiton_confidence_threshold=self.classificaiton_confidence_threshold,
         )
@@ -128,7 +133,8 @@ class DatabaseHandler:
         return record.model_dump()
 
     def insert_new_sample(
-        self, record: dict[str, Any], embedding: np.ndarray, sample: str, timestamp: int
+        self, record: dict[str, Any], embedding: np.ndarray, sample: str, timestamp: int,
+        source_path: str = ""
     ) -> None:
         """Adds a new sample to a record, creates for the sample id and recalculates the average embedding.
 
@@ -137,10 +143,13 @@ class DatabaseHandler:
             embedding (np.ndarray): The sample embedding vector.
             sample (str): The sample sample path.
             timestamp (int): The timestamp of the sample.
+            source_path (str): Identifier of the origin this sample was derived
+                from (e.g., the training image). See create_record.
         """
         samples = record["samples_json"]
         samples.append(
-            {"embedding": embedding.tolist(), "sample_path": sample, "id": str(uuid.uuid4())}
+            {"embedding": embedding.tolist(), "sample_path": sample, "id": str(uuid.uuid4()),
+             "source_path": source_path}
         )
         all_embeddings = [
             np.array(sample["embedding"]) for sample in samples

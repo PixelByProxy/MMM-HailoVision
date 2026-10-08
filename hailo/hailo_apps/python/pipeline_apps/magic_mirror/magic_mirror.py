@@ -152,15 +152,17 @@ class user_callbacks_class(app_callback_class):
         accumulates its own count and neither resets the other's (a single
         global challenger would starve every person after the first).
 
-        Returns True when a person is newly recognized: their label
-        stabilized on a track AND they were unseen on every track for at
-        least FACE_REFIRE_ABSENCE_SECONDS. The absence window is what stops
-        tracker ID churn (occlusion re-issues track IDs for the same person
-        within seconds) from re-firing the action for someone who never left.
-        Only a fired (newly recognized) label becomes
-        ``current_person_label`` (used to tag gestures) and resets gesture
-        state so a swipe can't span two people; a suppressed re-stabilization
-        is a pure presence-refresh with no side effects.
+        Returns True when the mirror should act on this label: either it
+        stabilized and differs from the person currently being shown (a
+        switch), or it is the same person returning after being unseen on
+        every track for at least FACE_REFIRE_ABSENCE_SECONDS (a re-greeting).
+        The absence window applies only to that second case, so tracker ID
+        churn (occlusion re-issues track IDs for the same person within
+        seconds) doesn't re-fire the action for someone who never left.
+        A fired switch becomes ``current_person_label`` (used to tag
+        gestures) and resets gesture state so a swipe can't span two people;
+        a suppressed re-stabilization is a pure presence-refresh with no side
+        effects.
         """
         if person_label == self.track_person_labels.get(track_id):
             # Label re-confirmed for this track; any challenger was flicker.
@@ -182,15 +184,20 @@ class user_callbacks_class(app_callback_class):
         now = time.monotonic()
         last_seen = self.label_last_seen.get(person_label)
         self.label_last_seen[person_label] = now
-        if last_seen is not None and (now - last_seen) < FACE_REFIRE_ABSENCE_SECONDS:
-            # Same person re-stabilized after tracker ID churn: they never
-            # left the scene, so don't retag gestures with their label or
-            # wipe someone else's in-progress gesture history.
-            return False
-        if person_label != self.current_person_label:
-            self.current_person_label = person_label
-            self.gesture_tracks.clear()
-            self.latest_gesture_frame.clear()
+        if person_label == self.current_person_label:
+            # Already the person being shown. Only a real absence re-fires (a
+            # genuine return deserves a fresh greeting); anything shorter is
+            # tracker ID churn - they never left the scene, so don't retag
+            # gestures or wipe in-progress gesture history.
+            return last_seen is None or (now - last_seen) >= FACE_REFIRE_ABSENCE_SECONDS
+        # A different label than the one being shown is always a switch, even
+        # if that label was seen moments ago on another track. "Unknown" is
+        # near-continuously present (every unrecognized face in the background
+        # refreshes its last-seen time), so gating the switch on absence left
+        # the mirror stuck on the last recognized person forever.
+        self.current_person_label = person_label
+        self.gesture_tracks.clear()
+        self.latest_gesture_frame.clear()
         return True
 
     def update_gesture(self, track_id, wrist_name, x, y, body_center_x, bbox_width, bbox_height):

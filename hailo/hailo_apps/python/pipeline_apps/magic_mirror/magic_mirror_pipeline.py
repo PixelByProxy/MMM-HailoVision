@@ -4,6 +4,7 @@ import os
 import shutil
 import json
 import sys
+import tempfile
 import time
 import uuid
 import setproctitle
@@ -70,6 +71,11 @@ hailo_logger = get_logger(__name__)
 # Derived from the shared project-wide policy so it can't drift; webp is
 # additionally accepted here because decodebin handles it fine for training.
 TRAIN_IMAGE_EXTENSIONS = set(IMAGE_EXTENSIONS) | {".webp"}
+
+# Longest edge a training image is fed to the pipeline at; see
+# prepare_train_image. Face detection downsamples to its own small network input
+# anyway, so this only bounds decode/scale cost and memory.
+TRAIN_MAX_IMAGE_DIMENSION = 2048
 
 class GStreamerMagicMirrorApp(GStreamerApp):
     # Cap on track_id_frame_count entries; stale track IDs are evicted (see
@@ -143,7 +149,9 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         if BASIC_PIPELINES_VIDEO_EXAMPLE_NAME in self.video_source:
             self.video_source = get_resource_path(pipeline_name=None, resource_type=DEFAULT_LOCAL_RESOURCES_PATH, arch=self.arch, model=MAGIC_MIRROR_VIDEO_NAME)
         
-        self.current_file = None  # for train mode
+        self.current_file = None  # for train mode - the file the pipeline reads
+        self.current_person = None  # for train mode - label for self.current_file
+        self.current_source_key = None  # for train mode - DB identity of the source image
         self.processed_names = {}  # name -> global_id for train mode - pipeline will be playing for 2 seconds, so we need to ensure each person will be processed only once
         self.processed_files = set()  # for train mode - pipeline will be playing for 2 seconds, so we need to ensure each file will be processed only once
 
@@ -297,19 +305,55 @@ class GStreamerMagicMirrorApp(GStreamerApp):
                     shutil.copy2(source_path, destination_path)
 
         print(f"Training on images from {self.train_images_dir}")
-        for person_name in os.listdir(self.train_images_dir):
+        scratch_dir = tempfile.mkdtemp(prefix="magic_mirror_train_")
+        try:
+            self.train_persons(scratch_dir)
+        finally:
+            shutil.rmtree(scratch_dir, ignore_errors=True)
+        print("Training completed")
+
+    def train_persons(self, scratch_dir):
+        """Embed every not-yet-trained image, one person folder at a time.
+
+        scratch_dir holds any downscaled stand-ins built by prepare_train_image.
+        """
+        for person_name in sorted(os.listdir(self.train_images_dir)):
             person_folder = os.path.join(self.train_images_dir, person_name)
-            if self.db_handler.get_record_by_label(label=person_name):
-                continue
             if not os.path.isdir(person_folder):
                 continue
-            print(f"Processing person: {person_name}")
-            for image_file in os.listdir(person_folder):
+
+            # Resume an existing person rather than skipping the whole folder:
+            # reusing their global_id means newly added images append samples to
+            # the record they already have instead of creating a second row under
+            # the same label.
+            existing_record = self.db_handler.get_record_by_label(label=person_name)
+            trained_sources = set()
+            if existing_record:
+                self.processed_names[person_name] = existing_record["global_id"]
+                trained_sources = self.trained_source_keys(existing_record)
+
+            pending_images = []
+            for image_file in sorted(os.listdir(person_folder)):
                 if os.path.splitext(image_file)[1].lower() not in TRAIN_IMAGE_EXTENSIONS:
                     hailo_logger.info(f"Skipping non-image file: {image_file}")
                     continue
-                print(f"Processing image: {image_file}")
-                self.current_file = os.path.join(person_folder, image_file)
+                image_path = os.path.join(person_folder, image_file)
+                if self.train_source_key(image_path) in trained_sources:
+                    hailo_logger.info(f"Skipping already-trained image: {image_file}")
+                    continue
+                pending_images.append(image_path)
+
+            if not pending_images:
+                continue
+            print(f"Processing person: {person_name}")
+            for image_path in pending_images:
+                print(f"Processing image: {os.path.basename(image_path)}")
+                # The pipeline may be handed a downscaled stand-in, so the label
+                # and the DB identity come from the original image, not from
+                # whatever path is actually fed in.
+                self.current_person = person_name
+                self.current_source_key = self.train_source_key(image_path)
+                self.current_file = self.prepare_train_image(image_path, scratch_dir)
                 self.create_pipeline()
                 self.connect_train_vector_db_callback()
                 self.connect_precrop_guard_callback()
@@ -317,7 +361,7 @@ class GStreamerMagicMirrorApp(GStreamerApp):
                     self.pipeline.set_state(Gst.State.PLAYING)
                     time.sleep(2)
                 except Exception as e:
-                    print(f"Error processing image {image_file}: {e}")
+                    print(f"Error processing image {os.path.basename(image_path)}: {e}")
                 finally:
                     if self.pipeline:
                         # set_state(NULL) is asynchronous. Block until the
@@ -329,7 +373,62 @@ class GStreamerMagicMirrorApp(GStreamerApp):
                         self.pipeline.set_state(Gst.State.NULL)
                         self.pipeline.get_state(5 * Gst.SECOND)
                         self.pipeline = None
-        print("Training completed")
+
+    def prepare_train_image(self, image_path, scratch_dir):
+        """Path the pipeline should actually read for a training image.
+
+        Full-resolution phone stills (12MP+) have been seen to segfault the
+        decode/detect path part-way through a run, which aborts training for
+        every person after them. Anything longer than TRAIN_MAX_IMAGE_DIMENSION
+        is therefore fed as a downscaled copy under scratch_dir. Detection runs
+        at the network's own small input size, so the cap costs no accuracy.
+
+        Falls back to the original path if the image can't be rescaled - that is
+        no worse than the previous behaviour of always feeding the original.
+        """
+        try:
+            with Image.open(image_path) as image:
+                if max(image.size) <= TRAIN_MAX_IMAGE_DIMENSION:
+                    return image_path
+                original_size = image.size
+                scaled = image.convert("RGB")
+                scaled.thumbnail((TRAIN_MAX_IMAGE_DIMENSION, TRAIN_MAX_IMAGE_DIMENSION))
+                scaled_path = os.path.join(scratch_dir, f"{uuid.uuid4().hex}.jpg")
+                scaled.save(scaled_path, quality=95)
+        except Exception as e:
+            print(f"Could not downscale {os.path.basename(image_path)}, using original: {e}")
+            return image_path
+        print(f"Downscaled {os.path.basename(image_path)} from "
+              f"{original_size[0]}x{original_size[1]} to {scaled.size[0]}x{scaled.size[1]}")
+        return scaled_path
+
+    def train_source_key(self, image_path):
+        """Stable identity for a training image, as stored on its DB samples.
+
+        Relative to the training directory ("Ryan/Ryan2.jpeg") so the key keeps
+        matching if that directory is moved or HAILO_MAGIC_MIRROR_TRAIN_DIR is
+        repointed; absolute only for paths outside it. The key is the path alone,
+        so replacing an image in place with different content does NOT retrain it
+        - delete the person's record to rebuild from scratch.
+        """
+        resolved = Path(image_path).resolve()
+        try:
+            return str(resolved.relative_to(Path(self.train_images_dir).resolve()))
+        except ValueError:
+            return str(resolved)
+
+    def trained_source_keys(self, record):
+        """Training images already embedded into a record.
+
+        Samples written before source tracking existed carry no "source_path", so
+        they match nothing and their images get embedded once more - harmless, but
+        it double-weights those faces in the average embedding until the record is
+        rebuilt.
+        """
+        samples = record.get("samples_json")
+        if isinstance(samples, str):  # get_record_by_label leaves the JSON unparsed
+            samples = json.loads(samples or "[]")
+        return {s["source_path"] for s in (samples or []) if s.get("source_path")}
 
     def connect_vector_db_callback(self):
         identity = self.pipeline.get_by_name(self.vector_db_callback_name)
@@ -445,7 +544,7 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         return Gst.PadProbeReturn.OK
     
     def train_vector_db_callback(self, pad, info, user_data):
-        if self.current_file in self.processed_files:
+        if self.current_source_key in self.processed_files:
             return Gst.PadProbeReturn.OK
         buffer = info.get_buffer()
         if buffer is None:
@@ -469,14 +568,20 @@ class GStreamerMagicMirrorApp(GStreamerApp):
             cropped_frame = self.crop_frame(frame, detection.get_bbox(), width, height)
             image_path = os.path.join(self.samples_dir, f"{uuid.uuid4()}.jpeg")
             self.image_saver.submit(self.save_image_file, cropped_frame, image_path)
-            name = os.path.basename(os.path.dirname(self.current_file))
+            # Both come from the original training image: self.current_file may be
+            # a downscaled stand-in in a scratch dir, whose parent directory is not
+            # the person's name. source_key records which training image this
+            # sample came from, so a later run can tell this face is already
+            # learned and only embed images it hasn't seen.
+            name = self.current_person
+            source_key = self.current_source_key
             if name in self.processed_names:
-                self.db_handler.insert_new_sample(record=self.db_handler.get_record_by_id(self.processed_names[name]), embedding=embedding_vector, sample=image_path, timestamp=int(time.time()))
+                self.db_handler.insert_new_sample(record=self.db_handler.get_record_by_id(self.processed_names[name]), embedding=embedding_vector, sample=image_path, timestamp=int(time.time()), source_path=source_key)
                 print(f"Adding face to: {name}")
             else:
-                person = self.db_handler.create_record(embedding=embedding_vector, sample=image_path, timestamp=int(time.time()), label=name)
+                person = self.db_handler.create_record(embedding=embedding_vector, sample=image_path, timestamp=int(time.time()), label=name, source_path=source_key)
                 print(f"New person added with ID: {person['global_id']}")
                 self.processed_names[name] = person['global_id']
-            self.processed_files.add(self.current_file)
+            self.processed_files.add(self.current_source_key)
             return Gst.PadProbeReturn.OK  # in case of training - iterate exactly once per image
         return Gst.PadProbeReturn.OK

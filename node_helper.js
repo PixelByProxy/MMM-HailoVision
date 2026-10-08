@@ -168,7 +168,10 @@ module.exports = NodeHelper.create({
         face,
         confidence: body.confidence,
         notification: handler.notification,
-        payload: handler.payload || {}
+        // ?? rather than ||: a falsy-but-valid payload must survive. Page
+        // index 0 for PAGE_CHANGED would otherwise become {}, and MMM-pages
+        // would try to show `modules[{}]` (undefined) and throw.
+        payload: handler.payload ?? {}
       });
     }
 
@@ -280,8 +283,15 @@ module.exports = NodeHelper.create({
   // /usr/local/hailo/resources/.env. The pipeline must run once in
   // "--mode train" to populate the face vector DB from existing images, THEN
   // start the headless run. Both are chained in one command: train runs to
-  // completion, and on success `exec` replaces the shell with the long-running
-  // headless pipeline (so node_helper still supervises a single process).
+  // completion, then `exec` replaces the shell with the long-running headless
+  // pipeline (so node_helper still supervises a single process).
+  //
+  // The two are chained with ";", not "&&", deliberately: training walks
+  // user-supplied images and a single bad one can take the process down
+  // (GStreamer decode of huge stills has segfaulted here). With "&&" that would
+  // also stop the headless run from ever starting, losing face AND gesture
+  // detection entirely. Running with a partially populated face DB is strictly
+  // better, so a failed train is logged and the run proceeds regardless.
   //
   // The only user-configurable piece is `cameraInputMode` ("usb" | "rpi" |
   // unset), which selects the camera via --input on the headless run. Unset
@@ -302,7 +312,8 @@ module.exports = NodeHelper.create({
     return [
       "-c",
       "source setup_env.sh && " +
-        "python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --mode train && " +
+        "{ python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --mode train || " +
+        'echo "training failed (exit $?); starting detection with the existing face DB"; }; ' +
         `exec python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --headless${input}`
     ];
   },

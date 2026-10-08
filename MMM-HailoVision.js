@@ -66,7 +66,7 @@ Module.register("MMM-HailoVision", {
     // Minimum face-recognition confidence (0–1) required before the pipeline
     // calls this module's API with a face_recognition action. Forwarded as
     // HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE.
-    minFaceConfidence: 0.8,
+    minFaceConfidence: 0.6,
 
     // Minimum person-detection confidence (0–1) required before the pipeline
     // calls this module's API with a swipe gesture. Forwarded as
