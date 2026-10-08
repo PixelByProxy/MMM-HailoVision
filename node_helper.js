@@ -168,9 +168,6 @@ module.exports = NodeHelper.create({
         face,
         confidence: body.confidence,
         notification: handler.notification,
-        // ?? rather than ||: a falsy-but-valid payload must survive. Page
-        // index 0 for PAGE_CHANGED would otherwise become {}, and MMM-pages
-        // would try to show `modules[{}]` (undefined) and throw.
         payload: handler.payload ?? {}
       });
     }
