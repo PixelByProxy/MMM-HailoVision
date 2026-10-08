@@ -365,8 +365,8 @@ module.exports = NodeHelper.create({
       env.HAILO_MAGIC_MIRROR_EMPTY_FRAME_SECONDS = String(emptyFrameSeconds);
     }
     // How long an unrecognized face must persist before the pipeline reports
-    // face "Unknown". Timed rather than counted in frames, because face track
-    // IDs are re-issued about once a second.
+    // face "Unknown". Timed rather than counted in frames, so routine missed
+    // detections don't keep resetting it.
     const unknownStableSeconds = Number(this.config.unknownStableSeconds);
     if (Number.isFinite(unknownStableSeconds)) {
       env.HAILO_MAGIC_MIRROR_UNKNOWN_STABLE_SECONDS = String(unknownStableSeconds);

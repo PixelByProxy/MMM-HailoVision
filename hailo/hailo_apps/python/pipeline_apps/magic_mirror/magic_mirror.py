@@ -89,6 +89,16 @@ GESTURE_MAX_BODY_DRIFT_RATIO = 0.6
 # Fallback shoulder-width estimate (as a fraction of bbox width) for frames
 # where the shoulder keypoints land on top of each other.
 GESTURE_SHOULDER_WIDTH_FALLBACK_RATIO = 0.35
+# Swipes only count while somebody is actually at the mirror, judged by face
+# detections (see the person branch in app_callback) - but by a face seen
+# RECENTLY, not one in this exact frame. The face detector drops single frames
+# routinely, and the arm sweeping across the body can hide the face for part of
+# the gesture; gating per frame skipped those frames' wrist samples, leaving
+# holes in the gesture history that could make real swipes fail to register.
+# One second covers the whole gesture window (GESTURE_HISTORY_LENGTH frames,
+# ~0.4s at 30fps) with room to spare, while a phantom pose in an empty room is
+# still shut out within a second of the last face.
+GESTURE_FACE_GRACE_SECONDS = 1.0
 # Consecutive classifications a NEW person label must persist on the SAME face
 # track before we accept it. Recognition confidence flickers around the
 # threshold (Alice <-> Bob), and every accepted switch fires a
@@ -100,12 +110,13 @@ FACE_STABLE_FRAMES = 10
 # a stranger. "Unknown" is not an identity - it is the recognition stage
 # failing to match an embedding - so it needs far more evidence than a name.
 #
-# Measured in SECONDS, and tracked across face tracks rather than within one,
-# because the face tracker re-issues IDs roughly once a second (observed: 8 new
-# track IDs in 6.3s with one person standing still). A per-track frame counter
-# long enough to be meaningful therefore never completes - each new track ID
-# resets it - which is why the earlier frame-based version meant "Unknown"
-# could not fire at all. Elapsed time is immune to that churn.
+# Measured in wall-clock SECONDS and accumulated across face tracks rather than
+# as consecutive frames on one track. A consecutive-frame count is reset by any
+# frame where the face detector misses (which happens routinely) and by any
+# change of track ID (occlusion, the person stepping away briefly), so a count
+# long enough to be meaningful rarely completes; an earlier frame-based version
+# never fired at all in practice. Elapsed time, cleared only by a recognition
+# or a genuinely empty room (see update_unknown), rides through both.
 #
 # The duration must give somebody who IS in the gallery, but whose first frame
 # was unusable, enough fresh attempts to be recognized before being called a
@@ -169,6 +180,10 @@ class user_callbacks_class(app_callback_class):
         # Monotonic time anybody was last seen in frame; drives the
         # NO_PERSON_LABEL fallback. None until the first sighting.
         self.last_presence_time = None
+        # Monotonic time a qualifying face was last actually seen; gates
+        # swipes. Kept apart from last_presence_time, which is also stamped on
+        # the first (possibly empty) frame to start the startup dwell clock.
+        self.last_face_time = None
         # Monotonic time an unrecognized face was first seen in the current
         # stretch of non-recognition; drives the UNRECOGNIZED_FACE_LABEL
         # announcement. None while nobody is there or somebody is recognized.
@@ -332,15 +347,30 @@ class user_callbacks_class(app_callback_class):
         self.unknown_since = None
         return True
 
+    def face_seen_recently(self, someone_present):
+        """
+        Record this frame's face presence and report whether a face has been
+        seen within GESTURE_FACE_GRACE_SECONDS - the gate for accepting swipes.
+        Call exactly once per frame.
+        """
+        now = time.monotonic()
+        if someone_present:
+            self.last_face_time = now
+            return True
+        return (
+            self.last_face_time is not None
+            and now - self.last_face_time <= GESTURE_FACE_GRACE_SECONDS
+        )
+
     def update_unknown(self, someone_present, recognized_seen, unknown_seen):
         """
         Report when an unrecognized face has been around long enough to
         announce a stranger.
 
         Timed in wall-clock seconds and accumulated ACROSS face tracks, not
-        within one. The face tracker re-issues IDs about once a second even for
-        somebody standing still, so a per-track counter resets long before any
-        meaningful threshold and "Unknown" never fires at all.
+        counted as consecutive frames within one: missed detections and track
+        ID changes kept resetting a consecutive count, so "Unknown" never
+        fired at all.
 
         Once started, the clock is cleared only by somebody being recognized,
         or by update_presence once the room has been empty for
@@ -539,6 +569,9 @@ def app_callback(element, buffer, user_data):
         and d.get_confidence() >= MAGIC_MIRROR_MIN_FACE_DETECTION_CONFIDENCE
         for d in detections
     )
+    # Whether swipes count this buffer: a face now, or within the last
+    # GESTURE_FACE_GRACE_SECONDS. Evaluated once per buffer, before the loop.
+    gestures_allowed = user_data.face_seen_recently(someone_present)
     # Face-recognition verdicts seen this buffer, both only consumed after the
     # loop (so accumulating them in it is safe):
     #   recognized_seen - at least one face resolved to a real identity
@@ -591,14 +624,16 @@ def app_callback(element, buffer, user_data):
                         user_data.latest_track_id = track_id
                         print(string_to_print)
         elif label == "person":
-            # A swipe only counts while a face is in frame. The pose stage
-            # emits phantom person tracks that outlive everybody in the room
-            # (observed: one track alive 47s with nobody there, firing swipes
-            # the whole time), and gesture geometry alone cannot tell their
-            # garbage keypoints from a real arm. A face detection is the
-            # corroboration the pose stage lacks, and costs nothing real: you
-            # are looking at a mirror when you gesture at it.
-            if not someone_present:
+            # A swipe only counts while somebody is at the mirror. The pose
+            # stage emits long-lived phantom person tracks (one lived nearly two
+            # minutes, and kept the mirror "occupied" after the room emptied;
+            # another lived 47s), steadily firing swipes no real arm makes, and
+            # gesture geometry alone cannot tell their garbage keypoints from a
+            # real arm. A recent face detection is the corroboration the pose
+            # stage lacks, and costs nothing real: you are looking at a mirror
+            # when you gesture at it. "Recent" rather than "this frame" - see
+            # GESTURE_FACE_GRACE_SECONDS.
+            if not gestures_allowed:
                 continue
 
             # For the same reason, person detections are not a presence signal
