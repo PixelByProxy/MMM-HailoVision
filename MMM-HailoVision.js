@@ -87,11 +87,13 @@ Module.register("MMM-HailoVision", {
     minGestureConfidence: 0.8,
 
     // Seconds an unrecognized face must stay in frame before the pipeline sends
-    // a face_recognition action with face "Unknown". Needs to outlast the
-    // recognition stage's retry interval (~4s) so somebody who simply wasn't
-    // matched on the first attempt isn't announced as a stranger. Forwarded as
+    // a face_recognition action with face "Unknown". During this window the
+    // pipeline keeps re-checking the face every few frames, so somebody whose
+    // first frame was bad gets recognized instead of announced as a stranger.
+    // Lower it for a snappier Unknown page; raise it if known people briefly
+    // flash the Unknown page as they walk up. Forwarded as
     // HAILO_MAGIC_MIRROR_UNKNOWN_STABLE_SECONDS.
-    unknownStableSeconds: 5.0,
+    unknownStableSeconds: 2.0,
 
     // Seconds the frame must be continuously empty before the pipeline sends a
     // face_recognition action with face "None" — nobody in front of the mirror

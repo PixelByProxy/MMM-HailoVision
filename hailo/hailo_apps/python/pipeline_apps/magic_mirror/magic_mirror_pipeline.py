@@ -129,6 +129,11 @@ class GStreamerMagicMirrorApp(GStreamerApp):
             "HAILO_MAGIC_MIRROR_MIN_FACE_DETECTION_CONFIDENCE",
             self.algo_params.get('min_face_detection_confidence', 0.6),
         )
+        # 4. Frames to wait before re-searching the gallery for a face that is
+        # still unrecognized (recognized faces wait skip_frames X 3). Each
+        # search costs ~5ms with a small gallery, so even every few frames is
+        # cheap, and it only applies while an unrecognized face is in view.
+        self.unknown_recheck_frames = max(1, int(self.algo_params.get('unknown_recheck_frames', 5)))
 
         # Initialize directories
         current_dir = Path(__file__).parent
@@ -573,8 +578,22 @@ class GStreamerMagicMirrorApp(GStreamerApp):
                 self.tracker.remove_classifications_from_track(tracker_name, track_id, 'face_recon')
                 self.tracker.add_object_to_track(tracker_name, track_id, new_classification)
             
-            # anyway re-process for "double-check" after self.skip_frames X 3
-            self.track_id_frame_count[track_id] = -3 * self.skip_frames
+            # When to look at this track again. A track that now holds a real
+            # identity only needs the occasional "double-check", after
+            # skip_frames X 3. A track that is still unrecognized gets another
+            # attempt after just unknown_recheck_frames: its first verdict is
+            # often a bad frame (head turning, mid-stride blur) of somebody who
+            # IS in the gallery, and the long wait made them sit as "Unknown"
+            # for 4s before getting a second chance - which forced the app's
+            # stranger announcement to wait that long too. Quick retries let a
+            # recognizable person resolve within a fraction of a second.
+            track_identified = recognized or (
+                existing is not None and existing.get_label() != UNRECOGNIZED_FACE_LABEL
+            )
+            if track_identified:
+                self.track_id_frame_count[track_id] = -3 * self.skip_frames
+            else:
+                self.track_id_frame_count[track_id] = self.skip_frames - self.unknown_recheck_frames
 
         return Gst.PadProbeReturn.OK
     

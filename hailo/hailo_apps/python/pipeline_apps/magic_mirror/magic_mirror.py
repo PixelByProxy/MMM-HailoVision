@@ -107,13 +107,14 @@ FACE_STABLE_FRAMES = 10
 # resets it - which is why the earlier frame-based version meant "Unknown"
 # could not fire at all. Elapsed time is immune to that churn.
 #
-# The duration has to outlast the recognition retry gap: the recognition
-# callback only re-attempts a classification every 4 * skip_frames (120 frames,
-# about 4s at 30fps, with the shipped face_recon_algo_params.json). A person who
-# missed the gallery on the first attempt gets another chance before being
-# called a stranger.
+# The duration must give somebody who IS in the gallery, but whose first frame
+# was unusable, enough fresh attempts to be recognized before being called a
+# stranger. The recognition callback re-searches a still-unrecognized face
+# every unknown_recheck_frames (5 frames with the shipped
+# face_recon_algo_params.json), so 2s at 30fps is about a dozen attempts. On
+# real runs a misread person matched on the very first retry.
 FACE_UNKNOWN_STABLE_SECONDS = get_env_float(
-    "HAILO_MAGIC_MIRROR_UNKNOWN_STABLE_SECONDS", 5.0
+    "HAILO_MAGIC_MIRROR_UNKNOWN_STABLE_SECONDS", 2.0
 )
 # A recognized label fires face_recognition only when the person stabilizes
 # after being UNSEEN for at least this long. The tracker keeps lost tracks for
@@ -335,30 +336,44 @@ class user_callbacks_class(app_callback_class):
         somebody standing still, so a per-track counter resets long before any
         meaningful threshold and "Unknown" never fires at all.
 
-        Once started, the clock is only cleared by somebody being recognized or
-        by the frame emptying - deliberately not by a frame that merely lacks
-        an Unknown classification. A fresh face track spends its first
-        skip_frames unclassified, and with tracks turning over every second
-        those gaps would otherwise keep restarting the timer.
+        Once started, the clock is cleared only by somebody being recognized,
+        or by update_presence once the room has been empty for
+        EMPTY_FRAME_SECONDS. It is deliberately NOT cleared by a single frame
+        without a face, nor by a frame that merely lacks an Unknown
+        classification. The face detector drops out for a frame here and there
+        constantly, and a fresh face track spends its first skip_frames
+        unclassified; resetting on either meant the clock never survived long
+        enough to fire. "Has the person left" is update_presence's
+        (debounced) call, not this method's.
 
         A recognized face anywhere in frame wins: that identification is what
         the mirror should act on, and an unrecognized face in the background
         must not override it.
         """
         now = time.monotonic()
-        if recognized_seen or not someone_present:
+        if recognized_seen:
+            if self.unknown_since is not None:
+                hailo_logger.info("Unknown-face timer cleared: a face was recognized.")
             self.unknown_since = None
             return False
         if self.unknown_since is None:
             if not unknown_seen:
-                # Somebody is here, but the recognition stage has not had a
-                # verdict on them yet. Nothing to time.
+                # Nobody unrecognized has had a verdict yet. Nothing to time.
                 return False
             self.unknown_since = now
+            hailo_logger.info(
+                f"Unknown-face timer started; announcing in "
+                f"{FACE_UNKNOWN_STABLE_SECONDS:.0f}s unless someone is recognized."
+            )
             return False
         if self.current_person_label == UNRECOGNIZED_FACE_LABEL:
             return False
         if now - self.unknown_since < FACE_UNKNOWN_STABLE_SECONDS:
+            return False
+        if not someone_present:
+            # Due, but this particular frame lost the face. Announce on the
+            # next frame that has one rather than into an empty frame; if the
+            # person really left, update_presence will clear the timer first.
             return False
         self.current_person_label = UNRECOGNIZED_FACE_LABEL
         self.gesture_tracks.clear()

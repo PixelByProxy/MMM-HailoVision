@@ -2,5 +2,6 @@
     "skip_frames": 30,
     "lance_db_vector_search_classification_confidence_threshold": 0.5,
     "min_face_detection_confidence": 0.6,
+    "unknown_recheck_frames": 5,
     "batch_size": 1
 }
