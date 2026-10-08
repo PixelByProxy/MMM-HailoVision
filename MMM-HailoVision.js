@@ -22,7 +22,10 @@ Module.register("MMM-HailoVision", {
     // ---- Action mapping ----
     // actions[action][face] = { notification, payload, shell }
     //   action: "face_recognition" | "swipe_left" | "swipe_right" (or custom)
-    //   face:   recognized person label, or "*" to match any face.
+    //   face:   recognized person label, or "*" to match any face. Two labels
+    //           are synthesized rather than trained: "Unknown" (a face is in
+    //           frame but matches nobody in the gallery) and "None" (nobody in
+    //           frame at all, after `emptyFrameSeconds`).
     // Each handler may define:
     //   notification: a MagicMirror notification to broadcast (sendNotification)
     //   payload:      payload object for that notification
@@ -68,10 +71,37 @@ Module.register("MMM-HailoVision", {
     // HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE.
     minFaceConfidence: 0.6,
 
+    // Minimum face-DETECTION confidence (0–1) a detection needs before the
+    // pipeline will try to recognize who it is. Answers "is this even a face",
+    // where minFaceConfidence answers "which person is this". Partial faces,
+    // reflections and background objects arrive as low-confidence detections
+    // and otherwise recognize as "Unknown", firing spurious face_recognition
+    // actions. Raise it if unknown-person events fire when nobody is there;
+    // lower it if people are missed at the edge of frame or in poor light.
+    // Forwarded as HAILO_MAGIC_MIRROR_MIN_FACE_DETECTION_CONFIDENCE.
+    minFaceDetectionConfidence: 0.6,
+
     // Minimum person-detection confidence (0–1) required before the pipeline
     // calls this module's API with a swipe gesture. Forwarded as
     // HAILO_MAGIC_MIRROR_MIN_GESTURE_CONFIDENCE.
     minGestureConfidence: 0.8,
+
+    // Seconds an unrecognized face must stay in frame before the pipeline sends
+    // a face_recognition action with face "Unknown". Needs to outlast the
+    // recognition stage's retry interval (~4s) so somebody who simply wasn't
+    // matched on the first attempt isn't announced as a stranger. Forwarded as
+    // HAILO_MAGIC_MIRROR_UNKNOWN_STABLE_SECONDS.
+    unknownStableSeconds: 5.0,
+
+    // Seconds the frame must be continuously empty before the pipeline sends a
+    // face_recognition action with face "None" — nobody in front of the mirror
+    // at all, as distinct from "Unknown" (somebody is there but unrecognized).
+    // Map "None" under actions.face_recognition to choose what the mirror does
+    // when the room empties. Detection drops out for a frame or two routinely,
+    // so this dwell time is what stops the display flickering; raise it if the
+    // mirror goes idle while you are still standing there. Forwarded as
+    // HAILO_MAGIC_MIRROR_EMPTY_FRAME_SECONDS.
+    emptyFrameSeconds: 3.0,
 
     // Show a small status line in the module region.
     showStatus: false,

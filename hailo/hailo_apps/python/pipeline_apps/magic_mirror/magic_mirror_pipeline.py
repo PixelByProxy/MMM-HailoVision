@@ -23,7 +23,11 @@ import hailo
 from hailo import HailoTracker
 from hailo_apps.python.core.common.background_worker import BackgroundWorker
 from hailo_apps.python.core.common.bounded_lru import BoundedLruDict
-from hailo_apps.python.core.common.db_handler import DatabaseHandler, Record
+from hailo_apps.python.core.common.db_handler import (
+    UNRECOGNIZED_FACE_LABEL,
+    DatabaseHandler,
+    Record,
+)
 from hailo_apps.python.core.common.core import (
     get_pipeline_parser,
     get_resource_path,
@@ -32,6 +36,7 @@ from hailo_apps.python.core.common.core import (
     resolve_hef_paths,
 )
 from hailo_apps.python.core.common.buffer_utils import get_numpy_from_buffer_efficient, get_caps_from_pad
+from hailo_apps.python.core.common.env_utils import get_env_float
 from hailo_apps.python.core.gstreamer.gstreamer_app import GStreamerApp
 from hailo_apps.python.core.common.defines import (
     RESOURCES_SO_DIR_NAME, 
@@ -115,6 +120,15 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         self.lance_db_vector_search_classification_confidence_threshold = self.algo_params['lance_db_vector_search_classification_confidence_threshold']
         # Both for face detection & recognition networks (not tunable from the UI)
         self.batch_size = self.algo_params['batch_size']
+        # 3. Minimum face-DETECTION confidence before a crop is worth
+        # recognizing at all. Distinct from the two thresholds above: those
+        # judge "which person is this", this one judges "is this even a face".
+        # Set by the MMM-HailoVision launcher from its `minFaceDetectionConfidence`
+        # option; the JSON value is the fallback for running the app directly.
+        self.min_face_detection_confidence = get_env_float(
+            "HAILO_MAGIC_MIRROR_MIN_FACE_DETECTION_CONFIDENCE",
+            self.algo_params.get('min_face_detection_confidence', 0.6),
+        )
 
         # Initialize directories
         current_dir = Path(__file__).parent
@@ -502,8 +516,20 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         
         # for each face detection
         for detection in (d for d in roi.get_objects_typed(hailo.HAILO_DETECTION) if d.get_label() == 'face'):
+            # Don't try to recognize something the detector isn't confident is
+            # a face. Partial faces, reflections and background objects come
+            # through as low-confidence detections; their crops are junk, so
+            # the gallery search either returns "Unknown" (which then drives a
+            # spurious unknown-person event) or, worse, clears the similarity
+            # threshold against a real person and mislabels them. Gating here
+            # rather than in the app callback also keeps the per-frame vector
+            # search - the most expensive step in this callback - off crops
+            # that can never produce a usable embedding.
+            if detection.get_confidence() < self.min_face_detection_confidence:
+                continue
+
             track_id = detection.get_objects_typed(hailo.HAILO_UNIQUE_ID)[0].get_id() if detection.get_objects_typed(hailo.HAILO_UNIQUE_ID) else None
-            
+
             # still in the skip frames period -skip
             if self.track_id_frame_count.get(track_id, 0) < self.skip_frames:
                 self.track_id_frame_count[track_id] = self.track_id_frame_count.get(track_id, 0) + 1
@@ -527,12 +553,21 @@ class GStreamerMagicMirrorApp(GStreamerApp):
                 continue
             embedding_vector = np.array(embedding[0].get_data())
             person = self.db_handler.search_record(embedding=embedding_vector)  # most time consuming operation - search the database for the person with the closest embedding
+            recognized = person['label'] != UNRECOGNIZED_FACE_LABEL
             # Clamp: cosine distance can exceed 1, which would yield a negative confidence.
             new_confidence = max(0.0, min(1.0, 1 - person['_distance']))
             classification = detection.get_objects_typed(hailo.HAILO_CLASSIFICATION)
-            if not classification or classification[0].get_confidence() < new_confidence:
-                if classification:
-                    detection.remove_object(classification[0])
+            existing = classification[0] if classification else None
+            # Keep the best classification this track has seen - but a no-match
+            # never overwrites an identity already established on it. A track is
+            # one face for its whole life, so "Unknown" from a blurred or
+            # turned-away frame means "this frame was unusable", not "somebody
+            # else"; letting it land would un-recognize a person still standing
+            # in front of the mirror. An unrecognized track does take the first
+            # real match that comes along (confidence 0.0 loses every compare).
+            if existing is None or (recognized and existing.get_confidence() < new_confidence):
+                if existing is not None:
+                    detection.remove_object(existing)
                 new_classification = hailo.HailoClassification(type='face_recon', label=person['label'], confidence=new_confidence)
                 detection.add_object(new_classification)
                 self.tracker.remove_classifications_from_track(tracker_name, track_id, 'face_recon')

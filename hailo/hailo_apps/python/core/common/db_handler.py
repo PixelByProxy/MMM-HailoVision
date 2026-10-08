@@ -25,6 +25,12 @@ except ImportError:
 # endregion
 
 
+# Label used when an embedding matches no record in the gallery. Not an
+# identity: it means "this embedding was not recognized", which is why
+# search_record reports it with the lowest possible confidence.
+UNRECOGNIZED_FACE_LABEL = "Unknown"
+
+
 class Record(LanceModel):
     # mandatory fields
     global_id: str  # unique id
@@ -220,15 +226,20 @@ class DatabaseHandler:
                 > search_result[0]["classificaiton_confidence_threshold"]
             ):  # if search_result[0]['_distance']>1 the condition is false by default (1-1.1=-0.1) because default value if 0.3
                 return search_result[0]
-        # No match from DB
+        # No match from DB. _distance is 1.0, not 0.0, so that callers deriving
+        # confidence as `1 - _distance` get 0.0: a no-match is the *least*
+        # confident outcome there is. A 0.0 distance here reported "Unknown"
+        # with confidence 1.0, which beat every genuine recognition in the
+        # keep-the-best-classification comparison downstream - so one unusable
+        # frame could overwrite a recognized face and then never be displaced.
         return {
             "global_id": str(uuid.uuid4()),
-            "label": "Unknown",
+            "label": UNRECOGNIZED_FACE_LABEL,
             "avg_embedding": None,
             "last_sample_recieved_time": None,
             "samples_json": None,
             "classificaiton_confidence_threshold": None,
-            "_distance": 0.0,
+            "_distance": 1.0,
         }
 
     def update_record_label(self, global_id: str, label: str = "Unknown") -> None:

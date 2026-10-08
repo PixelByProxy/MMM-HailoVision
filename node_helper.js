@@ -350,6 +350,27 @@ module.exports = NodeHelper.create({
     if (Number.isFinite(minFaceConfidence)) {
       env.HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE = String(minFaceConfidence);
     }
+    // Separate floor, applied earlier in the pipeline: how sure the face
+    // DETECTOR must be that a box is a face before recognition runs on it at
+    // all. Keeps junk crops (partial faces, reflections) from recognizing as
+    // "Unknown" and firing spurious face_recognition actions.
+    const minFaceDetectionConfidence = Number(this.config.minFaceDetectionConfidence);
+    if (Number.isFinite(minFaceDetectionConfidence)) {
+      env.HAILO_MAGIC_MIRROR_MIN_FACE_DETECTION_CONFIDENCE = String(minFaceDetectionConfidence);
+    }
+    // How long the frame must stay empty before the pipeline reports face
+    // "None" (nobody present), letting the mirror return to an idle page.
+    const emptyFrameSeconds = Number(this.config.emptyFrameSeconds);
+    if (Number.isFinite(emptyFrameSeconds)) {
+      env.HAILO_MAGIC_MIRROR_EMPTY_FRAME_SECONDS = String(emptyFrameSeconds);
+    }
+    // How long an unrecognized face must persist before the pipeline reports
+    // face "Unknown". Timed rather than counted in frames, because face track
+    // IDs are re-issued about once a second.
+    const unknownStableSeconds = Number(this.config.unknownStableSeconds);
+    if (Number.isFinite(unknownStableSeconds)) {
+      env.HAILO_MAGIC_MIRROR_UNKNOWN_STABLE_SECONDS = String(unknownStableSeconds);
+    }
 
     // Tie the pipeline's lifetime to this host process at the kernel level:
     // setpriv sets PR_SET_PDEATHSIG so the OS sends the pipeline SIGTERM the
