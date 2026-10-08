@@ -37,9 +37,16 @@
           notification: "SHOW_ALERT",
           payload: { title: "Hailo Vision", message: "Hi Logan!", timer: 4000 }
         },
+        // Somebody is in front of the mirror but was not recognized.
         Unknown: {
           notification: "SHOW_ALERT",
           payload: { title: "Hailo Vision", message: "Unknown person", timer: 3000 }
+        },
+        // Nobody in frame at all, for `emptyFrameSeconds`. Use this to return
+        // the mirror to an idle/default page when the room empties.
+        None: {
+          notification: "SHOW_ALERT",
+          payload: { title: "Hailo Vision", message: "Nobody here", timer: 3000 }
         },
         "*": {
           // Example: run any host command when a face is recognized.

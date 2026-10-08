@@ -168,7 +168,7 @@ module.exports = NodeHelper.create({
         face,
         confidence: body.confidence,
         notification: handler.notification,
-        payload: handler.payload || {}
+        payload: handler.payload ?? {}
       });
     }
 
@@ -280,8 +280,15 @@ module.exports = NodeHelper.create({
   // /usr/local/hailo/resources/.env. The pipeline must run once in
   // "--mode train" to populate the face vector DB from existing images, THEN
   // start the headless run. Both are chained in one command: train runs to
-  // completion, and on success `exec` replaces the shell with the long-running
-  // headless pipeline (so node_helper still supervises a single process).
+  // completion, then `exec` replaces the shell with the long-running headless
+  // pipeline (so node_helper still supervises a single process).
+  //
+  // The two are chained with ";", not "&&", deliberately: training walks
+  // user-supplied images and a single bad one can take the process down
+  // (GStreamer decode of huge stills has segfaulted here). With "&&" that would
+  // also stop the headless run from ever starting, losing face AND gesture
+  // detection entirely. Running with a partially populated face DB is strictly
+  // better, so a failed train is logged and the run proceeds regardless.
   //
   // The only user-configurable piece is `cameraInputMode` ("usb" | "rpi" |
   // unset), which selects the camera via --input on the headless run. Unset
@@ -302,7 +309,8 @@ module.exports = NodeHelper.create({
     return [
       "-c",
       "source setup_env.sh && " +
-        "python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --mode train && " +
+        "{ python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --mode train || " +
+        'echo "training failed (exit $?); starting detection with the existing face DB"; }; ' +
         `exec python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --headless${input}`
     ];
   },
@@ -341,6 +349,27 @@ module.exports = NodeHelper.create({
     const minFaceConfidence = Number(this.config.minFaceConfidence);
     if (Number.isFinite(minFaceConfidence)) {
       env.HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE = String(minFaceConfidence);
+    }
+    // Separate floor, applied earlier in the pipeline: how sure the face
+    // DETECTOR must be that a box is a face before recognition runs on it at
+    // all. Keeps junk crops (partial faces, reflections) from recognizing as
+    // "Unknown" and firing spurious face_recognition actions.
+    const minFaceDetectionConfidence = Number(this.config.minFaceDetectionConfidence);
+    if (Number.isFinite(minFaceDetectionConfidence)) {
+      env.HAILO_MAGIC_MIRROR_MIN_FACE_DETECTION_CONFIDENCE = String(minFaceDetectionConfidence);
+    }
+    // How long the frame must stay empty before the pipeline reports face
+    // "None" (nobody present), letting the mirror return to an idle page.
+    const emptyFrameSeconds = Number(this.config.emptyFrameSeconds);
+    if (Number.isFinite(emptyFrameSeconds)) {
+      env.HAILO_MAGIC_MIRROR_EMPTY_FRAME_SECONDS = String(emptyFrameSeconds);
+    }
+    // How long an unrecognized face must persist before the pipeline reports
+    // face "Unknown". Timed rather than counted in frames, so routine missed
+    // detections don't keep resetting it.
+    const unknownStableSeconds = Number(this.config.unknownStableSeconds);
+    if (Number.isFinite(unknownStableSeconds)) {
+      env.HAILO_MAGIC_MIRROR_UNKNOWN_STABLE_SECONDS = String(unknownStableSeconds);
     }
 
     // Tie the pipeline's lifetime to this host process at the kernel level:

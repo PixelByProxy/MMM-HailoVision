@@ -94,9 +94,12 @@ To use this module, add a configuration to the modules array in the
 | `actions`          | `object` | see below     | `action → face → handler` map. See [The `actions` map](#the-actions-map). |
 | `apiToken`         | `String` | `""`          | Optional shared secret. When set, requests must send it in the `X-Hailo-Token` header. |
 | `cameraInputMode`  | `String` | `""`          | Camera source for the pipeline: `"usb"` (USB webcam, auto-detected) or `"rpi"` (Raspberry Pi camera). Empty/undefined omits `--input`, so the pipeline uses its bundled test video. |
+| `emptyFrameSeconds` | `float` | `3.0`         | Seconds the frame must be *continuously* empty before the pipeline sends a `face_recognition` action with face `None` (nobody present at all — distinct from `Unknown`). Detection drops out for a frame or two routinely, so this dwell time is what stops the display flickering; raise it if the mirror goes idle while you are still standing there. Forwarded as the `HAILO_MAGIC_MIRROR_EMPTY_FRAME_SECONDS` env var. |
 | `launchHailoApp`   | `bool`   | `true`        | Launch the Hailo Python pipeline on startup. |
-| `minFaceConfidence` | `float` | `0.8`         | Minimum face-recognition confidence (0–1) required before the pipeline sends a `face_recognition` action. Forwarded as the `HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE` env var. |
+| `minFaceConfidence` | `float` | `0.6`         | Minimum face-recognition confidence (0–1) required before the pipeline sends a `face_recognition` action — "which person is this". Forwarded as the `HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE` env var. |
+| `minFaceDetectionConfidence` | `float` | `0.6` | Minimum face-*detection* confidence (0–1) before the pipeline tries to recognize a detection at all — "is this even a face". Partial faces, reflections and background objects arrive as low-confidence detections and otherwise recognize as `Unknown`, firing spurious `face_recognition` actions. Raise it if unknown-person events fire when nobody is there; lower it if people are missed at the edge of frame or in poor light. Forwarded as the `HAILO_MAGIC_MIRROR_MIN_FACE_DETECTION_CONFIDENCE` env var. |
 | `minGestureConfidence` | `float` | `0.8`      | Minimum person-detection confidence (0–1) required before the pipeline sends a swipe gesture. Forwarded as the `HAILO_MAGIC_MIRROR_MIN_GESTURE_CONFIDENCE` env var. |
+| `unknownStableSeconds` | `float` | `2.0`      | Seconds an unrecognized face must stay in frame before the pipeline sends a `face_recognition` action with face `Unknown`. During this window the pipeline re-checks the face against the gallery every few frames, so somebody whose first frame was bad gets recognized rather than announced as a stranger. Lower it for a snappier `Unknown` page; raise it if known people briefly flash the `Unknown` page as they walk up. Forwarded as the `HAILO_MAGIC_MIRROR_UNKNOWN_STABLE_SECONDS` env var. |
 | `showStatus`       | `bool`   | `false`       | Show a small status line in the module region. |
 | `trainingDir`      | `String` | `""`          | Directory of face-training images (one subfolder per person). Forwarded to the pipeline as the `HAILO_MAGIC_MIRROR_TRAIN_DIR` env var. Empty uses the bundled default inside the module. |
 
@@ -108,6 +111,8 @@ actions: {
   swipe_right: { "*": { notification: "PAGE_DECREMENT" } },
   face_recognition: {
     Anna:    { notification: "SHOW_ALERT", payload: { title: "Hailo Vision", message: "Hi Anna!", timer: 4000 } },
+    Unknown: { notification: "SHOW_ALERT", payload: { title: "Hailo Vision", message: "Unknown person", timer: 3000 } },
+    None:    { notification: "PAGE_CHANGED", payload: 0 },
     "*":     { shell: "echo recognized $HAILO_FACE" }
   }
 }
@@ -116,6 +121,14 @@ actions: {
 - The first key is the **action**.
 - The second key is the **face** (the recognized person label), or `"*"` to
   match any face. An exact face match wins; otherwise `"*"` is used.
+- Two face labels are **synthesized** by the pipeline rather than trained, and
+  are worth handling separately:
+  - `Unknown` — a face is in frame but matches nobody in the gallery.
+    *Somebody is there, and I don't know who.*
+  - `None` — nobody is in frame at all, after the frame has stayed empty for
+    `emptyFrameSeconds`. *Nobody is there.* Use it to send the mirror back to
+    an idle or default page when the room empties. Fires once per departure,
+    not repeatedly while the room stays empty.
 - Each **handler** may define:
   - `notification` (+ optional `payload`): a MagicMirror notification that is
     broadcast via `sendNotification`, so other modules can react (e.g.
@@ -145,6 +158,9 @@ HAILO_MAGIC_MIRROR_API_URL=http://localhost:<MagicMirror port>/MMM-HailoVision/a
 HAILO_MAGIC_MIRROR_API_TOKEN=<apiToken, if set>
 HAILO_MAGIC_MIRROR_MIN_GESTURE_CONFIDENCE=<minGestureConfidence>
 HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE=<minFaceConfidence>
+HAILO_MAGIC_MIRROR_MIN_FACE_DETECTION_CONFIDENCE=<minFaceDetectionConfidence>
+HAILO_MAGIC_MIRROR_EMPTY_FRAME_SECONDS=<emptyFrameSeconds>
+HAILO_MAGIC_MIRROR_UNKNOWN_STABLE_SECONDS=<unknownStableSeconds>
 ```
 
 If you'd rather run the pipeline yourself, leave `launchHailoApp: false` and set
