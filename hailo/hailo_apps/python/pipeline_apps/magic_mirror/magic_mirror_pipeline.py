@@ -134,6 +134,15 @@ class GStreamerMagicMirrorApp(GStreamerApp):
         # search costs ~5ms with a small gallery, so even every few frames is
         # cheap, and it only applies while an unrecognized face is in view.
         self.unknown_recheck_frames = max(1, int(self.algo_params.get('unknown_recheck_frames', 5)))
+        # 5. Classification confidence the app needs before it acts on a
+        # recognition (same env var and default as magic_mirror.py). A track
+        # whose best match is below it keeps the quick unknown_recheck_frames
+        # cadence: the gallery threshold (2.) may already call it a match, but
+        # the mirror won't show it, so waiting the long "identified" interval
+        # would leave it sitting on "Unknown" for seconds.
+        self.min_actionable_face_confidence = get_env_float(
+            "HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE", 0.8
+        )
 
         # Initialize directories
         current_dir = Path(__file__).parent
@@ -577,18 +586,23 @@ class GStreamerMagicMirrorApp(GStreamerApp):
                 detection.add_object(new_classification)
                 self.tracker.remove_classifications_from_track(tracker_name, track_id, 'face_recon')
                 self.tracker.add_object_to_track(tracker_name, track_id, new_classification)
-            
-            # When to look at this track again. A track that now holds a real
-            # identity only needs the occasional "double-check", after
-            # skip_frames X 3. A track that is still unrecognized gets another
-            # attempt after just unknown_recheck_frames: its first verdict is
-            # often a bad frame (head turning, mid-stride blur) of somebody who
-            # IS in the gallery, and the long wait made them sit as "Unknown"
-            # for 4s before getting a second chance - which forced the app's
-            # stranger announcement to wait that long too. Quick retries let a
-            # recognizable person resolve within a fraction of a second.
-            track_identified = recognized or (
-                existing is not None and existing.get_label() != UNRECOGNIZED_FACE_LABEL
+                best_label, best_confidence = person['label'], new_confidence
+            else:
+                best_label, best_confidence = existing.get_label(), existing.get_confidence()
+
+            # When to look at this track again. A track that now holds an
+            # identity the app will act on only needs the occasional
+            # "double-check", after skip_frames X 3. Any other track - still
+            # unrecognized, or matched below min_actionable_face_confidence -
+            # gets another attempt after just unknown_recheck_frames: its
+            # verdict so far is often a bad frame (head turning, mid-stride
+            # blur) of somebody who IS in the gallery. The long wait left them
+            # shown as "Unknown" for seconds before a second chance; quick
+            # retries let a recognizable person resolve within a fraction of a
+            # second.
+            track_identified = (
+                best_label != UNRECOGNIZED_FACE_LABEL
+                and best_confidence >= self.min_actionable_face_confidence
             )
             if track_identified:
                 self.track_id_frame_count[track_id] = -3 * self.skip_frames
