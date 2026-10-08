@@ -297,9 +297,16 @@ class user_callbacks_class(app_callback_class):
         fall back to NO_PERSON_LABEL.
 
         Returns True once per departure: when the frame has been continuously
-        empty for EMPTY_FRAME_SECONDS and the mirror is still showing
-        somebody. Subsequent empty frames return False, so the action fires
-        once rather than every frame for as long as the room stays empty.
+        empty for EMPTY_FRAME_SECONDS and the mirror is not already showing
+        NO_PERSON_LABEL. Subsequent empty frames return False, so the action
+        fires once rather than every frame for as long as the room stays empty.
+
+        That includes startup. Before any label has been sent the mirror sits
+        on whatever its configured home page is, and nothing guarantees that
+        is the empty-room page (MMM-pages commonly homes on the "Unknown"
+        page). So an empty room at launch is announced like any departure,
+        once the dwell time confirms it - otherwise the mirror would claim an
+        unrecognized person is present until somebody first walks by.
 
         Falling back also makes the next arrival a clean switch: whoever walks
         up next differs from the label being shown, so their action fires
@@ -310,12 +317,11 @@ class user_callbacks_class(app_callback_class):
             self.last_presence_time = now
             return False
         if self.last_presence_time is None:
-            # Nobody has been seen since startup, so the mirror is already in
-            # its default state and there is nothing to fall back from. Start
-            # the clock rather than firing.
+            # First frame since startup, and it is empty: start the dwell
+            # clock from here.
             self.last_presence_time = now
             return False
-        if self.current_person_label in (None, NO_PERSON_LABEL):
+        if self.current_person_label == NO_PERSON_LABEL:
             return False
         if now - self.last_presence_time < EMPTY_FRAME_SECONDS:
             return False
