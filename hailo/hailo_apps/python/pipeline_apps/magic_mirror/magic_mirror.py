@@ -138,6 +138,17 @@ FACE_REFIRE_ABSENCE_SECONDS = 30
 # dicts keyed by them grow forever on an always-on mirror.
 GESTURE_STATE_MAX_ENTRIES = 100
 
+# Liveness beacon. app_callback runs once per buffer whether or not anything
+# is detected, so as long as frames flow it is a true "pipeline is processing"
+# signal. An empty room produces no detection/presence output for arbitrarily
+# long, so that normal output cannot be used as a heartbeat; without a beacon
+# the node_helper watchdog cannot tell a healthy-but-quiet pipeline from one
+# that has wedged (both go silent, both keep burning a core). Emit a beacon
+# only after this many seconds without ANY stdout line, so busy periods stay
+# noise-free - real output resets the same clock. Must stay well below the
+# watchdog's stall timeout in node_helper (pipelineStallTimeoutMs).
+HEARTBEAT_INTERVAL_SECONDS = 10
+
 # COCO pose keypoint indices as produced by the pose-estimation postprocess.
 COCO_KEYPOINTS = {
     "nose": 0,
@@ -188,6 +199,11 @@ class user_callbacks_class(app_callback_class):
         # stretch of non-recognition; drives the UNRECOGNIZED_FACE_LABEL
         # announcement. None while nobody is there or somebody is recognized.
         self.unknown_since = None
+        # Monotonic time anything was last written to stdout. Drives the
+        # liveness beacon (see HEARTBEAT_INTERVAL_SECONDS): every real line and
+        # every beacon refreshes it, so the beacon only fires during quiet
+        # stretches. Seeded to now so a fresh pipeline doesn't beacon instantly.
+        self.last_output_monotonic = time.monotonic()
 
         # MagicMirror settings as instance attributes
         self.magic_mirror_enabled = MAGIC_MIRROR_ENABLED
@@ -202,6 +218,27 @@ class user_callbacks_class(app_callback_class):
             self.magic_mirror_handler = MagicMirrorHandler(
                 self.magic_mirror_api_url, self.magic_mirror_api_token
             )
+
+    def emit(self, line):
+        """Write a pipeline line to stdout and refresh the liveness clock.
+
+        Every status line the pipeline prints goes through here so the
+        heartbeat beacon (maybe_heartbeat) can share one "last wrote something"
+        timestamp with real output and stay quiet while the pipeline is busy.
+        """
+        self.last_output_monotonic = time.monotonic()
+        print(line, flush=True)
+
+    def maybe_heartbeat(self):
+        """Emit a liveness beacon if stdout has been quiet too long.
+
+        Called once per buffer from app_callback. Costs a single monotonic
+        clock read per frame on the hot path and only prints during quiet
+        stretches, so it adds no log noise while faces/gestures are active.
+        """
+        now = time.monotonic()
+        if now - self.last_output_monotonic >= HEARTBEAT_INTERVAL_SECONDS:
+            self.emit(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]: heartbeat')
 
     def face_is_actionable(self, person_label, confidence):
         """
@@ -553,6 +590,11 @@ def app_callback(element, buffer, user_data):
     if buffer is None:
         hailo_logger.warning("Received None buffer.")
         return
+    # Liveness beacon: this callback fires per buffer regardless of scene
+    # content, so a beacon here stops precisely when the pipeline wedges, even
+    # over an empty room. The node_helper watchdog restarts the pipeline if it
+    # falls silent. Cheap and quiet - see maybe_heartbeat / HEARTBEAT_INTERVAL.
+    user_data.maybe_heartbeat()
     pad = element.get_static_pad("src")
     fmt, width, height = get_caps_from_pad(pad)
     roi = hailo.get_roi_from_buffer(buffer)
@@ -622,7 +664,7 @@ def app_callback(element, buffer, user_data):
                             )
                     if track_id > user_data.latest_track_id:
                         user_data.latest_track_id = track_id
-                        print(string_to_print)
+                        user_data.emit(string_to_print)
         elif label == "person":
             # A swipe only counts while somebody is at the mirror. The pose
             # stage emits long-lived phantom person tracks (one lived nearly two
@@ -705,7 +747,7 @@ def app_callback(element, buffer, user_data):
 
             for wrist_name, gesture_name in completed:
                 confidence = min(1.0, max(0.0, detection_confidence))
-                print(
+                user_data.emit(
                     f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]: '
                     f'Gesture recognition: {gesture_name} from {wrist_name} '
                     f'for person ID: {track_id} (Confidence: {confidence:.1f})'
@@ -723,7 +765,7 @@ def app_callback(element, buffer, user_data):
     # carries a stale Unknown resolves as empty - update_presence clears the
     # Unknown clock itself.
     if user_data.update_unknown(someone_present, recognized_seen, unknown_seen):
-        print(
+        user_data.emit(
             f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]: '
             f'Unrecognized face present for {FACE_UNKNOWN_STABLE_SECONDS:.0f}s'
         )
@@ -735,7 +777,7 @@ def app_callback(element, buffer, user_data):
     # Nobody in frame for long enough: hand the mirror back to its idle state.
     # No detection means no confidence to report, so none is sent.
     if user_data.update_presence(someone_present):
-        print(
+        user_data.emit(
             f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]: '
             f'Frame empty for {EMPTY_FRAME_SECONDS:.0f}s - nobody present'
         )

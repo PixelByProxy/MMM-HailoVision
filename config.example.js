@@ -60,6 +60,11 @@
     // which case the pipeline uses its bundled test video.
     cameraInputMode: "",
 
+    // Liveness watchdog: restart the pipeline if it produces no output for
+    // this many ms (it can wedge while still alive — faces/gestures silently
+    // stop but the process never exits). Set to 0 to disable. Default 60000.
+    pipelineStallTimeoutMs: 60000,
+
     // Directory with face-training images (one subfolder per person, e.g.
     // trainingDir: "/home/pi/faces" containing faces/Alice/*.jpg). Leave
     // empty to use the bundled default inside the module.

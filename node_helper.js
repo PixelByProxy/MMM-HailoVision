@@ -30,6 +30,20 @@ const HAILO_RESTART_DELAY_MS = 5000;
 const HAILO_RESTART_MAX_DELAY_MS = 5 * 60 * 1000;
 const HAILO_STABLE_RUN_MS = 60 * 1000;
 
+// Liveness watchdog. The pipeline can wedge while still alive — frames keep
+// flowing through the native GStreamer/Hailo layer (so it keeps burning a
+// core) but the app callback stops processing them, and recognition/gestures
+// silently stop. The exit/error restart path below never fires for this,
+// because the process never exits. So we also watch the pipeline's stdout:
+// app_callback emits a line (a real event or, over a quiet scene, a periodic
+// "heartbeat" beacon — see HEARTBEAT_INTERVAL_SECONDS in magic_mirror.py)
+// as long as it is processing buffers. If that stream goes silent for longer
+// than this timeout, we treat the pipeline as hung and kill it so the normal
+// restart path brings up a fresh one. Must stay comfortably above the
+// pipeline's heartbeat interval so a transient hiccup doesn't trip it.
+// Overridable via config.pipelineStallTimeoutMs; set that to 0 to disable.
+const HAILO_STALL_TIMEOUT_MS = 60 * 1000;
+
 // Allowed values for the config's `cameraInputMode`. Only whitelisted values
 // are ever interpolated into the launch command (it runs through bash), so
 // config can select the camera source but not inject arbitrary arguments.
@@ -48,6 +62,10 @@ module.exports = NodeHelper.create({
     this.restartTimer = null;
     this.restartDelay = HAILO_RESTART_DELAY_MS;
     this.lastSpawnTime = 0;
+    // Liveness watchdog timer (see HAILO_STALL_TIMEOUT_MS). Armed while a
+    // pipeline is running, refreshed on every stdout chunk, and cleared on
+    // teardown.
+    this.stallTimer = null;
     // Per-(action, face) timestamps for the actionCooldownMs rate limit.
     this.lastActionTime = new Map();
     // Reap the detached pipeline on every teardown path so it can't be
@@ -309,7 +327,7 @@ module.exports = NodeHelper.create({
     return [
       "-c",
       "source setup_env.sh && " +
-        "{ python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --mode train || " +
+        "{ python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --mode train --headless || " +
         'echo "training failed (exit $?); starting detection with the existing face DB"; }; ' +
         `exec python -u hailo_apps/python/pipeline_apps/magic_mirror/magic_mirror.py --headless${input}`
     ];
@@ -397,9 +415,17 @@ module.exports = NodeHelper.create({
     this.hailoProcess = child;
     this.lastSpawnTime = Date.now();
     this.sendSocketNotification("HAILO_STATUS", { status: "pipeline running" });
+    // Arm the liveness watchdog; every stdout/stderr chunk below rearms it.
+    this.refreshStallWatchdog();
 
-    child.stdout.on("data", (data) => Log.info(`[hailo] ${data.toString().trim()}`));
-    child.stderr.on("data", (data) => Log.warn(`[hailo] ${data.toString().trim()}`));
+    child.stdout.on("data", (data) => {
+      this.refreshStallWatchdog();
+      Log.info(`[hailo] ${data.toString().trim()}`);
+    });
+    child.stderr.on("data", (data) => {
+      this.refreshStallWatchdog();
+      Log.warn(`[hailo] ${data.toString().trim()}`);
+    });
 
     // A spawn failure can emit BOTH "error" and "exit"; schedule (and double
     // the backoff) only once per child, whichever event arrives first.
@@ -414,6 +440,7 @@ module.exports = NodeHelper.create({
 
     child.on("exit", (code, signal) => {
       Log.warn(`${this.name}: Hailo pipeline exited (code=${code} signal=${signal})`);
+      this.clearStallWatchdog();
       this.hailoProcess = null;
       this.sendSocketNotification("HAILO_STATUS", { status: "pipeline stopped" });
       // A run that lived long enough was healthy; start the backoff over.
@@ -425,6 +452,7 @@ module.exports = NodeHelper.create({
 
     child.on("error", (err) => {
       Log.error(`${this.name}: failed to start Hailo pipeline: ${err.message}`);
+      this.clearStallWatchdog();
       this.hailoProcess = null;
       this.sendSocketNotification("HAILO_STATUS", { status: "pipeline error" });
       scheduleOnce();
@@ -442,6 +470,49 @@ module.exports = NodeHelper.create({
     Log.info(`${this.name}: restarting Hailo pipeline in ${this.restartDelay}ms`);
     this.restartTimer = setTimeout(() => this.launchHailoApp(), this.restartDelay);
     this.restartDelay = Math.min(this.restartDelay * 2, HAILO_RESTART_MAX_DELAY_MS);
+  },
+
+  // ---- Liveness watchdog ------------------------------------------------
+  // Configured stall timeout in ms (0 disables). Falls back to the default
+  // when config is absent or not a finite number.
+  stallTimeoutMs() {
+    const configured = Number(this.config && this.config.pipelineStallTimeoutMs);
+    return Number.isFinite(configured) ? configured : HAILO_STALL_TIMEOUT_MS;
+  },
+
+  // (Re)arm the stall watchdog: cancel any pending timer and start a fresh
+  // one. Called when the pipeline spawns and on every stdout/stderr chunk, so
+  // the timer only elapses after a full timeout with no output at all. A no-op
+  // while disabled, shutting down, or with no running pipeline.
+  refreshStallWatchdog() {
+    clearTimeout(this.stallTimer);
+    this.stallTimer = null;
+    const timeout = this.stallTimeoutMs();
+    if (timeout <= 0 || this.stopping || !this.hailoProcess) {
+      return;
+    }
+    this.stallTimer = setTimeout(() => this.onPipelineStall(timeout), timeout);
+  },
+
+  clearStallWatchdog() {
+    clearTimeout(this.stallTimer);
+    this.stallTimer = null;
+  },
+
+  // Fired when the pipeline has produced no output for the whole timeout: it is
+  // alive (the process never exited) but no longer processing frames. SIGKILL
+  // the group — a wedged pipeline may ignore SIGTERM, and guaranteed recovery
+  // is the point — and let the child "exit" handler run the normal restart.
+  onPipelineStall(timeout) {
+    this.stallTimer = null;
+    if (this.stopping || !this.hailoProcess) {
+      return;
+    }
+    Log.error(
+      `${this.name}: Hailo pipeline produced no output for ${timeout}ms — assuming it is hung; restarting it.`
+    );
+    this.sendSocketNotification("HAILO_STATUS", { status: "pipeline stalled" });
+    this.killPipeline("SIGKILL");
   },
 
   // Terminate the pipeline and everything it spawned. Signals the whole
@@ -469,6 +540,7 @@ module.exports = NodeHelper.create({
     // Called by MagicMirror on shutdown.
     this.stopping = true;
     clearTimeout(this.restartTimer);
+    this.clearStallWatchdog();
     Log.info(`${this.name}: stopping Hailo pipeline`);
     this.killPipeline("SIGTERM");
   }
