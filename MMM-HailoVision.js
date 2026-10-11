@@ -66,6 +66,16 @@ Module.register("MMM-HailoVision", {
     // configurable.
     launchHailoApp: true,
 
+    // Liveness watchdog. The pipeline can wedge while still alive — frames
+    // keep flowing through the native Hailo/GStreamer layer but the detector
+    // stops processing them, so faces and gestures silently stop working and
+    // the process never exits to trigger a normal restart. node_helper watches
+    // the pipeline's stdout (which carries a periodic heartbeat while it is
+    // processing); if nothing arrives for this many milliseconds it kills and
+    // relaunches the pipeline. Keep it well above the pipeline's ~10s heartbeat
+    // so a brief hiccup doesn't trip it. Set to 0 to disable the watchdog.
+    pipelineStallTimeoutMs: 60000,
+
     // Minimum face-recognition confidence (0–1) required before the pipeline
     // calls this module's API with a face_recognition action. Forwarded as
     // HAILO_MAGIC_MIRROR_MIN_FACE_CONFIDENCE.
